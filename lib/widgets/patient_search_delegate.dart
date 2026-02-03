@@ -45,27 +45,27 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
 
   Widget _buildSearchResults(BuildContext context) {
     if (query.isEmpty) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.search, size: 80, color: Colors.grey.shade300),
-              const SizedBox(height: 16),
-              Text(
-                'Search by Name, Ward, or Bed',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 16),
-              ),
-            ],
-          ),
-        );
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, size: 80, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text(
+              'Search by ID, Name, Ward, or Bed',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 16),
+            ),
+          ],
+        ),
+      );
     }
 
-    // Since Firestore doesn't support native full-text search, 
+    // Since Firestore doesn't support native full-text search,
     // we'll fetch patients (optimized for the specific doctor) and filter client-side.
     // For a larger app, we'd use Algolia or similar.
     // Use getAllPatients() to search across ALL wards (as requested "search each ward")
     return StreamBuilder<List<PatientModel>>(
-      stream: _databaseService.getAllPatients(), 
+      stream: _databaseService.getAllPatients(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -79,9 +79,10 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
         final filteredPatients = patients.where((patient) {
           final q = query.toLowerCase();
           return patient.name.toLowerCase().contains(q) ||
-                 patient.wardNumber.toString().contains(q) ||
-                 patient.bedNumber.toString().contains(q) ||
-                 patient.id.toLowerCase().contains(q);
+              patient.wardNumber.toString().contains(q) ||
+              patient.bedNumber.toString().contains(q) ||
+              patient.id.toLowerCase().contains(q) ||
+              (patient.patientCode?.toLowerCase().contains(q) ?? false);
         }).toList();
 
         if (filteredPatients.isEmpty) {
@@ -94,44 +95,76 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
           itemBuilder: (context, index) {
             final patient = filteredPatients[index];
             return ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
               leading: CircleAvatar(
-                backgroundColor: patient.isCritical 
+                backgroundColor: patient.isCritical
                     ? AppTheme.criticalRed.withValues(alpha: 0.1)
                     : AppTheme.primaryColor.withValues(alpha: 0.1),
-                child:Icon(
+                child: Icon(
                   Icons.person,
-                  color: patient.isCritical ? AppTheme.criticalRed : AppTheme.primaryColor,
+                  color: patient.isCritical
+                      ? AppTheme.criticalRed
+                      : AppTheme.primaryColor,
                 ),
               ),
               title: Text(
                 patient.name,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.location_on_outlined, size: 14, color: AppTheme.textSecondary),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Ward ${patient.wardNumber}  •  Bed ${patient.bedNumber}',
-                      style: TextStyle(
-                        color: AppTheme.textPrimary,
-                        fontWeight: FontWeight.w500,
+                    if (patient.patientCode != null)
+                      Text(
+                        patient.patientCode!,
+                        style: TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
                       ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: AppTheme.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Ward ${patient.wardNumber}  •  Bed ${patient.bedNumber}',
+                          style: TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              trailing: patient.isCritical 
+              trailing: patient.isCritical
                   ? Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: AppTheme.criticalRed,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text('CRITICAL', style: TextStyle(color: Colors.white, fontSize: 10)),
+                      child: const Text(
+                        'CRITICAL',
+                        style: TextStyle(color: Colors.white, fontSize: 10),
+                      ),
                     )
                   : null,
               onTap: () {

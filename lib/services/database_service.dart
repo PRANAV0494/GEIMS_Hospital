@@ -16,7 +16,10 @@ class DatabaseService {
   // Update user profile
   Future<bool> updateUser(String userId, Map<String, dynamic> data) async {
     try {
-      await _firestore.collection(AppConstants.usersCollection).doc(userId).update(data);
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(userId)
+          .update(data);
       return true;
     } catch (e) {
       return false;
@@ -26,7 +29,10 @@ class DatabaseService {
   // Delete user (for admin)
   Future<bool> deleteUser(String userId) async {
     try {
-      await _firestore.collection(AppConstants.usersCollection).doc(userId).delete();
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(userId)
+          .delete();
       return true;
     } catch (e) {
       return false;
@@ -146,11 +152,35 @@ class DatabaseService {
     }
   }
 
+  // Get next patient code with atomic increment
+  Future<String> _getNextPatientCode() async {
+    final counterRef = _firestore.collection('config').doc('patient_counter');
+
+    return await _firestore.runTransaction<String>((transaction) async {
+      final counterDoc = await transaction.get(counterRef);
+
+      int nextNumber;
+      if (counterDoc.exists) {
+        nextNumber = (counterDoc.data()?['counter'] ?? 0) + 1;
+      } else {
+        nextNumber = 1;
+      }
+
+      transaction.set(counterRef, {
+        'counter': nextNumber,
+      }, SetOptions(merge: true));
+
+      // Format as GEIMS0001, GEIMS0002, etc.
+      return 'GEIMS${nextNumber.toString().padLeft(4, '0')}';
+    });
+  }
+
   // Add new patient
   Future<String?> addPatient(PatientModel patient) async {
     try {
       final id = _uuid.v4();
-      final newPatient = patient.copyWith(id: id);
+      final patientCode = await _getNextPatientCode();
+      final newPatient = patient.copyWith(id: id, patientCode: patientCode);
       await _firestore
           .collection(AppConstants.patientsCollection)
           .doc(id)
@@ -319,11 +349,11 @@ class DatabaseService {
           .collection(AppConstants.medicationsCollection)
           .doc(medicationId)
           .update({
-        'isAdministered': true,
-        'administeredTime': Timestamp.now(),
-        'administeredById': nurseId,
-        'administeredByName': nurseName,
-      });
+            'isAdministered': true,
+            'administeredTime': Timestamp.now(),
+            'administeredById': nurseId,
+            'administeredByName': nurseName,
+          });
       return true;
     } catch (e) {
       return false;
@@ -383,10 +413,7 @@ class DatabaseService {
       await _firestore
           .collection(AppConstants.messagesCollection)
           .doc(messageId)
-          .update({
-        'isRead': true,
-        'readAt': Timestamp.now(),
-      });
+          .update({'isRead': true, 'readAt': Timestamp.now()});
       return true;
     } catch (e) {
       return false;
@@ -409,14 +436,14 @@ class DatabaseService {
           .collection(AppConstants.auditLogsCollection)
           .doc(id)
           .set({
-        'id': id,
-        'userId': userId,
-        'action': action,
-        'entityType': entityType,
-        'entityId': entityId,
-        'timestamp': Timestamp.now(),
-        'metadata': metadata,
-      });
+            'id': id,
+            'userId': userId,
+            'action': action,
+            'entityType': entityType,
+            'entityId': entityId,
+            'timestamp': Timestamp.now(),
+            'metadata': metadata,
+          });
     } catch (e) {
       // Silently fail for audit logs
     }
@@ -449,10 +476,7 @@ class DatabaseService {
     try {
       final id = _uuid.v4();
       final newTask = task.copyWith(id: id);
-      await _firestore
-          .collection('tasks')
-          .doc(id)
-          .set(newTask.toMap());
+      await _firestore.collection('tasks').doc(id).set(newTask.toMap());
       return id;
     } catch (e) {
       return null;
@@ -467,9 +491,7 @@ class DatabaseService {
     String? completedByNurseName,
   }) async {
     try {
-      final updates = <String, dynamic>{
-        'isCompleted': isCompleted,
-      };
+      final updates = <String, dynamic>{'isCompleted': isCompleted};
 
       if (isCompleted) {
         updates['completedByNurseId'] = completedByNurseId;
@@ -481,10 +503,7 @@ class DatabaseService {
         updates['completedAt'] = null;
       }
 
-      await _firestore
-          .collection('tasks')
-          .doc(taskId)
-          .update(updates);
+      await _firestore.collection('tasks').doc(taskId).update(updates);
       return true;
     } catch (e) {
       return false;
@@ -494,10 +513,7 @@ class DatabaseService {
   // Delete task
   Future<bool> deleteTask(String taskId) async {
     try {
-      await _firestore
-          .collection('tasks')
-          .doc(taskId)
-          .delete();
+      await _firestore.collection('tasks').doc(taskId).delete();
       return true;
     } catch (e) {
       return false;

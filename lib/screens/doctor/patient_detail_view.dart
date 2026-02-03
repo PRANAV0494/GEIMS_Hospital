@@ -20,10 +20,7 @@ import '../../services/database_service.dart';
 class PatientDetailView extends StatefulWidget {
   final PatientModel patient;
 
-  const PatientDetailView({
-    super.key,
-    required this.patient,
-  });
+  const PatientDetailView({super.key, required this.patient});
 
   @override
   State<PatientDetailView> createState() => _PatientDetailViewState();
@@ -77,7 +74,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
 
     if (mounted) {
       setState(() => _isSending = false);
-      
+
       if (result != null) {
         _messageController.clear();
         Future.delayed(const Duration(milliseconds: 100), () {
@@ -99,17 +96,17 @@ class _PatientDetailViewState extends State<PatientDetailView>
         final directory = await getTemporaryDirectory();
         final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
         _recordingPath = '${directory.path}/$fileName';
-        
+
         await _audioRecorder.start(
           const RecordConfig(encoder: AudioEncoder.aacLc),
           path: _recordingPath!,
         );
-        
+
         setState(() {
           _isRecording = true;
           _recordDuration = 0;
         });
-        
+
         _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
           setState(() => _recordDuration++);
         });
@@ -132,7 +129,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
   Future<void> _stopRecording() async {
     _recordTimer?.cancel();
     final path = await _audioRecorder.stop();
-    
+
     if (path != null && mounted) {
       setState(() => _isRecording = false);
       await _sendVoiceMessage(path);
@@ -150,32 +147,33 @@ class _PatientDetailViewState extends State<PatientDetailView>
 
   Future<void> _sendVoiceMessage(String filePath) async {
     setState(() => _isSending = true);
-    
+
     try {
       // Upload to Firebase Storage
       final file = File(filePath);
-      
+
       // Verify file exists
       if (!await file.exists()) {
         throw Exception('Recording file not found');
       }
-      
+
       final fileBytes = await file.length();
       if (fileBytes == 0) {
         throw Exception('Recording file is empty');
       }
-      
-      final fileName = 'voice_messages/${widget.patient.id}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      final fileName =
+          'voice_messages/${widget.patient.id}_${DateTime.now().millisecondsSinceEpoch}.m4a';
       final storageRef = FirebaseStorage.instance.ref().child(fileName);
-      
+
       // Upload with metadata
       final uploadTask = await storageRef.putFile(
         file,
         SettableMetadata(contentType: 'audio/mp4'),
       );
-      
+
       final downloadUrl = await uploadTask.ref.getDownloadURL();
-      
+
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final user = authProvider.currentUser;
 
@@ -225,9 +223,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Bed ${widget.patient.bedNumber}'),
-      ),
+      appBar: AppBar(title: Text('Bed ${widget.patient.bedNumber}')),
       body: Column(
         children: [
           // Patient header
@@ -289,6 +285,26 @@ class _PatientDetailViewState extends State<PatientDetailView>
                             ),
                           ],
                         ],
+                      ),
+                      const SizedBox(height: 4),
+                      // Patient Code Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          widget.patient.displayCode,
+                          style: TextStyle(
+                            color: AppTheme.primaryColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -411,7 +427,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              
+
               _buildVitalsGrid(latest),
 
               const SizedBox(height: 24),
@@ -422,7 +438,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              
+
               _buildLineChart(
                 chartData,
                 (v) => v.heartRate.toDouble(),
@@ -438,7 +454,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
-              
+
               _buildLineChart(
                 chartData,
                 (v) => v.oxygenSaturation,
@@ -449,16 +465,17 @@ class _PatientDetailViewState extends State<PatientDetailView>
               const SizedBox(height: 24),
 
               // Vitals History
-              Text(
-                'History',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('History', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 12),
 
-              ...vitals.take(5).map((v) => _VitalsHistoryCard(
-                vitals: v,
-                onTap: () => _showVitalDetailDialog(v),
-              )),
+              ...vitals
+                  .take(5)
+                  .map(
+                    (v) => _VitalsHistoryCard(
+                      vitals: v,
+                      onTap: () => _showVitalDetailDialog(v),
+                    ),
+                  ),
             ],
           ),
         );
@@ -553,10 +570,8 @@ class _PatientDetailViewState extends State<PatientDetailView>
             show: true,
             drawVerticalLine: false,
             horizontalInterval: 20,
-            getDrawingHorizontalLine: (value) => FlLine(
-              color: Colors.grey.shade200,
-              strokeWidth: 1,
-            ),
+            getDrawingHorizontalLine: (value) =>
+                FlLine(color: Colors.grey.shade200, strokeWidth: 1),
           ),
           titlesData: FlTitlesData(
             leftTitles: AxisTitles(
@@ -565,10 +580,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
                 reservedSize: 40,
                 getTitlesWidget: (value, meta) => Text(
                   value.toInt().toString(),
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 10,
-                  ),
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10),
                 ),
               ),
             ),
@@ -639,16 +651,15 @@ class _PatientDetailViewState extends State<PatientDetailView>
 
         final medications = snapshot.data!;
         final pending = medications.where((m) => !m.isAdministered).toList();
-        final administered = medications.where((m) => m.isAdministered).toList();
+        final administered = medications
+            .where((m) => m.isAdministered)
+            .toList();
 
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
             if (pending.isNotEmpty) ...[
-              Text(
-                'Pending',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('Pending', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 12),
               ...pending.map((m) => _MedicationLogCard(medication: m)),
               const SizedBox(height: 24),
@@ -713,11 +724,8 @@ class _PatientDetailViewState extends State<PatientDetailView>
                 itemBuilder: (context, index) {
                   final message = messages[index];
                   final isMe = message.senderId == currentUserId;
-                  
-                  return _MessageBubble(
-                    message: message,
-                    isMe: isMe,
-                  );
+
+                  return _MessageBubble(message: message, isMe: isMe);
                 },
               );
             },
@@ -816,7 +824,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
           ),
         ),
         const SizedBox(width: 12),
-        
+
         // Recording indicator
         Expanded(
           child: Container(
@@ -824,7 +832,9 @@ class _PatientDetailViewState extends State<PatientDetailView>
             decoration: BoxDecoration(
               color: AppTheme.criticalRed.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppTheme.criticalRed.withValues(alpha: 0.3)),
+              border: Border.all(
+                color: AppTheme.criticalRed.withValues(alpha: 0.3),
+              ),
             ),
             child: Row(
               children: [
@@ -858,7 +868,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
           ),
         ),
         const SizedBox(width: 12),
-        
+
         // Stop/Send button
         Container(
           decoration: BoxDecoration(
@@ -884,6 +894,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
     _audioPlayer.dispose();
     super.dispose();
   }
+
   void _showVitalDetailDialog(VitalsModel vital) {
     showModalBottomSheet(
       context: context,
@@ -924,13 +935,14 @@ class _PatientDetailViewState extends State<PatientDetailView>
                     children: [
                       Text(
                         'Vitals Details',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        DateFormat('EEEE, MMMM dd, yyyy').format(vital.timestamp),
+                        DateFormat(
+                          'EEEE, MMMM dd, yyyy',
+                        ).format(vital.timestamp),
                         style: TextStyle(
                           fontSize: 14,
                           color: AppTheme.textSecondary,
@@ -939,7 +951,10 @@ class _PatientDetailViewState extends State<PatientDetailView>
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primaryColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -1052,7 +1067,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isAbnormal 
+        color: isAbnormal
             ? AppTheme.criticalRed.withValues(alpha: 0.1)
             : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(16),
@@ -1071,10 +1086,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
               const SizedBox(width: 4),
               Text(
                 label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textSecondary,
-                ),
+                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
               ),
             ],
           ),
@@ -1089,16 +1101,15 @@ class _PatientDetailViewState extends State<PatientDetailView>
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: isAbnormal ? AppTheme.criticalRed : AppTheme.textPrimary,
+                  color: isAbnormal
+                      ? AppTheme.criticalRed
+                      : AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(width: 4),
               Text(
                 unit,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textSecondary,
-                ),
+                style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
               ),
             ],
           ),
@@ -1149,10 +1160,7 @@ class _VitalCard extends StatelessWidget {
           ),
           Text(
             unit,
-            style: TextStyle(
-              fontSize: 10,
-              color: color.withValues(alpha: 0.8),
-            ),
+            style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.8)),
           ),
         ],
       ),
@@ -1198,7 +1206,11 @@ class _VitalsHistoryCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Icon(Icons.touch_app, size: 14, color: AppTheme.textSecondary),
+                    Icon(
+                      Icons.touch_app,
+                      size: 14,
+                      color: AppTheme.textSecondary,
+                    ),
                   ],
                 ),
               ],
@@ -1210,8 +1222,14 @@ class _VitalsHistoryCard extends StatelessWidget {
               children: [
                 _miniVital('HR', '${vitals.heartRate} bpm'),
                 _miniVital('BP', vitals.bloodPressure),
-                _miniVital('O₂', '${vitals.oxygenSaturation.toStringAsFixed(0)}%'),
-                _miniVital('Temp', '${vitals.temperature.toStringAsFixed(1)}°C'),
+                _miniVital(
+                  'O₂',
+                  '${vitals.oxygenSaturation.toStringAsFixed(0)}%',
+                ),
+                _miniVital(
+                  'Temp',
+                  '${vitals.temperature.toStringAsFixed(1)}°C',
+                ),
               ],
             ),
           ],
@@ -1223,10 +1241,7 @@ class _VitalsHistoryCard extends StatelessWidget {
   Widget _miniVital(String label, String value) {
     return Text(
       '$label: $value',
-      style: TextStyle(
-        fontSize: 13,
-        color: AppTheme.textSecondary,
-      ),
+      style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
     );
   }
 }
@@ -1248,8 +1263,8 @@ class _MedicationLogCard extends StatelessWidget {
           color: medication.isAdministered
               ? AppTheme.stableGreen.withValues(alpha: 0.5)
               : medication.isOverdue
-                  ? AppTheme.criticalRed
-                  : AppTheme.dividerColor,
+              ? AppTheme.criticalRed
+              : AppTheme.dividerColor,
         ),
         boxShadow: [AppTheme.cardShadow],
       ),
@@ -1284,10 +1299,7 @@ class _MedicationLogCard extends StatelessWidget {
                 ),
                 Text(
                   '${medication.dosage} • ${medication.routeLabel}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -1299,8 +1311,8 @@ class _MedicationLogCard extends StatelessWidget {
                     color: medication.isAdministered
                         ? AppTheme.stableGreen
                         : medication.isOverdue
-                            ? AppTheme.criticalRed
-                            : AppTheme.textSecondary,
+                        ? AppTheme.criticalRed
+                        : AppTheme.textSecondary,
                     fontWeight: medication.isOverdue
                         ? FontWeight.bold
                         : FontWeight.normal,
@@ -1323,10 +1335,7 @@ class _MessageBubble extends StatefulWidget {
   final MessageModel message;
   final bool isMe;
 
-  const _MessageBubble({
-    required this.message,
-    required this.isMe,
-  });
+  const _MessageBubble({required this.message, required this.isMe});
 
   @override
   State<_MessageBubble> createState() => _MessageBubbleState();
@@ -1382,7 +1391,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         child: Column(
-          crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: widget.isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             if (!widget.isMe)
               Padding(
@@ -1396,7 +1407,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   ),
                 ),
               ),
-            
+
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
@@ -1420,7 +1431,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   : Text(
                       widget.message.content,
                       style: TextStyle(
-                        color: widget.isMe ? Colors.white : AppTheme.textPrimary,
+                        color: widget.isMe
+                            ? Colors.white
+                            : AppTheme.textPrimary,
                         fontSize: 15,
                       ),
                     ),
@@ -1444,8 +1457,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       widget.message.isRead
                           ? Icons.done_all
                           : widget.message.isDelivered
-                              ? Icons.done_all
-                              : Icons.done,
+                          ? Icons.done_all
+                          : Icons.done,
                       size: 14,
                       color: widget.message.isRead
                           ? AppTheme.primaryColor
@@ -1465,8 +1478,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
     final totalSeconds = widget.message.voiceDurationSeconds ?? 0;
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
-    final durationLabel = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-    
+    final durationLabel =
+        '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1476,7 +1490,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: widget.isMe 
+              color: widget.isMe
                   ? Colors.white.withValues(alpha: 0.2)
                   : AppTheme.primaryColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
@@ -1502,11 +1516,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
             ),
             const SizedBox(height: 2),
             Text(
-              _isPlaying 
+              _isPlaying
                   ? '${_position.inSeconds ~/ 60}:${(_position.inSeconds % 60).toString().padLeft(2, '0')} / $durationLabel'
                   : durationLabel,
               style: TextStyle(
-                color: widget.isMe 
+                color: widget.isMe
                     ? Colors.white.withValues(alpha: 0.7)
                     : AppTheme.textSecondary,
                 fontSize: 12,
