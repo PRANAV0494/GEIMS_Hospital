@@ -96,12 +96,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
     }
   }
 
-  void _updateWardBed(int ward, int bed) {
-    setState(() {
-      _selectedWard = ward;
-      _selectedBed = bed;
-    });
-  }
+  // Removed unused method _updateWardBed - not referenced anywhere
 
   void _showWardBedSelector() {
 

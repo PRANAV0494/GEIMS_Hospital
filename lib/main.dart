@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -19,6 +20,12 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
+    // Disable reCAPTCHA verification for development (emulators/testing)
+    // IMPORTANT: Remove this in production or configure App Check properly
+    await FirebaseAuth.instance.setSettings(
+      appVerificationDisabledForTesting: true,
+    );
+
     // Enable Firestore persistence for offline support and caching
     // Limit cache to 100MB to prevent memory bloat
     FirebaseFirestore.instance.settings = const Settings(
@@ -27,6 +34,7 @@ void main() async {
     );
 
     debugPrint('✅ Firebase initialized successfully with persistence');
+    debugPrint('⚠️ reCAPTCHA disabled for development');
   } catch (e) {
     debugPrint('❌ Firebase initialization error: $e');
   }

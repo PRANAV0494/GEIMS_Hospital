@@ -1003,7 +1003,7 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                           return;
                         }
 
-                        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                        // authProvider not needed - removed unused variable
                         final medication = MedicationModel(
                           id: '',
                           patientId: widget.patient.id,
