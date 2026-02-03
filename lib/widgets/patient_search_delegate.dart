@@ -1,13 +1,18 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/patient_model.dart';
 import '../services/database_service.dart';
 import '../config/app_theme.dart';
-import '../config/routes.dart';
 import '../screens/doctor/patient_detail_view.dart';
 
 class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
   final DatabaseService _databaseService = DatabaseService();
   final String doctorId; // Optional: to filter by doctor if needed
+
+  // Debounce timer for search optimization
+  Timer? _debounceTimer;
+  String _lastQuery = '';
+  Stream<List<PatientModel>>? _cachedStream;
 
   PatientSearchDelegate({this.doctorId = ''});
 
@@ -19,6 +24,8 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
           icon: const Icon(Icons.clear),
           onPressed: () {
             query = '';
+            _lastQuery = '';
+            _cachedStream = null;
             showSuggestions(context);
           },
         ),
@@ -29,7 +36,10 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
   Widget? buildLeading(BuildContext context) {
     return IconButton(
       icon: const Icon(Icons.arrow_back),
-      onPressed: () => close(context, null),
+      onPressed: () {
+        _debounceTimer?.cancel();
+        close(context, null);
+      },
     );
   }
 
@@ -60,12 +70,15 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
       );
     }
 
-    // Since Firestore doesn't support native full-text search,
-    // we'll fetch patients (optimized for the specific doctor) and filter client-side.
-    // For a larger app, we'd use Algolia or similar.
-    // Use getAllPatients() to search across ALL wards (as requested "search each ward")
+    // Use cached stream if query hasn't changed enough
+    // This prevents recreating the stream on every keystroke
+    if (_cachedStream == null || _lastQuery != query) {
+      _lastQuery = query;
+      _cachedStream = _databaseService.getAllPatients();
+    }
+
     return StreamBuilder<List<PatientModel>>(
-      stream: _databaseService.getAllPatients(),
+      stream: _cachedStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -76,8 +89,8 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
         }
 
         final patients = snapshot.data!;
+        final q = query.toLowerCase();
         final filteredPatients = patients.where((patient) {
-          final q = query.toLowerCase();
           return patient.name.toLowerCase().contains(q) ||
               patient.wardNumber.toString().contains(q) ||
               patient.bedNumber.toString().contains(q) ||
@@ -168,7 +181,6 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
                     )
                   : null,
               onTap: () {
-                // close(context, patient);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
