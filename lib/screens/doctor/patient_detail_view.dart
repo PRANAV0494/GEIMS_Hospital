@@ -174,6 +174,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
 
       final downloadUrl = await uploadTask.ref.getDownloadURL();
 
+      if (!mounted) return;
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final user = authProvider.currentUser;
 
@@ -512,7 +513,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
         ),
         _VitalCard(
           label: 'O₂ Saturation',
-          value: '${vitals.oxygenSaturation.toStringAsFixed(1)}',
+          value: vitals.oxygenSaturation.toStringAsFixed(1),
           unit: '%',
           icon: Icons.air,
           color: VitalsModel.isOxygenNormal(vitals.oxygenSaturation)
@@ -521,7 +522,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
         ),
         _VitalCard(
           label: 'Temperature',
-          value: '${vitals.temperature.toStringAsFixed(1)}',
+          value: vitals.temperature.toStringAsFixed(1),
           unit: '°C',
           icon: Icons.thermostat,
           color: VitalsModel.isTemperatureNormal(vitals.temperature)
@@ -539,7 +540,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
         ),
         _VitalCard(
           label: 'Glucose',
-          value: '${vitals.glucoseLevel.toStringAsFixed(0)}',
+          value: vitals.glucoseLevel.toStringAsFixed(0),
           unit: 'mg/dL',
           icon: Icons.water_drop,
           color: VitalsModel.isGlucoseNormal(vitals.glucoseLevel)
@@ -1004,14 +1005,14 @@ class _PatientDetailViewState extends State<PatientDetailView>
                   _vitalDetailCard(
                     icon: '💧',
                     label: 'Oxygen Saturation',
-                    value: '${vital.oxygenSaturation.toStringAsFixed(1)}',
+                    value: vital.oxygenSaturation.toStringAsFixed(1),
                     unit: '%',
                     isAbnormal: vital.isOxygenLow,
                   ),
                   _vitalDetailCard(
                     icon: '🌡️',
                     label: 'Temperature',
-                    value: '${vital.temperature.toStringAsFixed(1)}',
+                    value: vital.temperature.toStringAsFixed(1),
                     unit: '°C',
                     isAbnormal: vital.isTemperatureAbnormal,
                   ),
@@ -1032,7 +1033,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
                   _vitalDetailCard(
                     icon: '🍬',
                     label: 'Glucose Level',
-                    value: '${vital.glucoseLevel.toStringAsFixed(0)}',
+                    value: vital.glucoseLevel.toStringAsFixed(0),
                     unit: 'mg/dL',
                     isAbnormal: vital.isGlucoseAbnormal,
                   ),
@@ -1344,6 +1345,7 @@ class _MessageBubble extends StatefulWidget {
 class _MessageBubbleState extends State<_MessageBubble> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
+  // ignore: unused_field - Reserved for UI progress display in future update
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 

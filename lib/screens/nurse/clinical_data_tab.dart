@@ -91,9 +91,9 @@ class _ClinicalDataTabState extends State<ClinicalDataTab>
             const SizedBox(height: 16),
             Text(
               'No patient in this bed',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: AppTheme.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(color: AppTheme.textSecondary),
             ),
             const SizedBox(height: 8),
             Text(
@@ -151,7 +151,10 @@ class _ClinicalDataTabState extends State<ClinicalDataTab>
               ),
               if (_patient!.isCritical)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppTheme.criticalRed,
                     borderRadius: BorderRadius.circular(8),
@@ -196,8 +199,14 @@ class _ClinicalDataTabState extends State<ClinicalDataTab>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _VitalsSection(patient: _patient!, databaseService: _databaseService),
-              _MedicationsSection(patient: _patient!, databaseService: _databaseService),
+              _VitalsSection(
+                patient: _patient!,
+                databaseService: _databaseService,
+              ),
+              _MedicationsSection(
+                patient: _patient!,
+                databaseService: _databaseService,
+              ),
             ],
           ),
         ),
@@ -217,10 +226,7 @@ class _VitalsSection extends StatefulWidget {
   final PatientModel patient;
   final DatabaseService databaseService;
 
-  const _VitalsSection({
-    required this.patient,
-    required this.databaseService,
-  });
+  const _VitalsSection({required this.patient, required this.databaseService});
 
   @override
   State<_VitalsSection> createState() => _VitalsSectionState();
@@ -246,10 +252,17 @@ class _VitalsSectionState extends State<_VitalsSection> {
     final resp = int.tryParse(_respController.text);
     final glucose = double.tryParse(_glucoseController.text);
 
-    if (heartRate == null || systolic == null || diastolic == null ||
-        oxygen == null || temp == null || resp == null || glucose == null) {
+    if (heartRate == null ||
+        systolic == null ||
+        diastolic == null ||
+        oxygen == null ||
+        temp == null ||
+        resp == null ||
+        glucose == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields with valid numbers')),
+        const SnackBar(
+          content: Text('Please fill all fields with valid numbers'),
+        ),
       );
       return;
     }
@@ -278,7 +291,7 @@ class _VitalsSectionState extends State<_VitalsSection> {
 
     if (mounted) {
       setState(() => _isSaving = false);
-      
+
       if (result != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -313,14 +326,13 @@ class _VitalsSectionState extends State<_VitalsSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Vitals Trend Chart
-          Text(
-            'Recent Trends',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('Recent Trends', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          
+
           StreamBuilder<List<VitalsModel>>(
-            stream: widget.databaseService.getVitalsForPatient(widget.patient.id),
+            stream: widget.databaseService.getVitalsForPatient(
+              widget.patient.id,
+            ),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Container(
@@ -339,7 +351,7 @@ class _VitalsSectionState extends State<_VitalsSection> {
               }
 
               final vitals = snapshot.data!.take(10).toList().reversed.toList();
-              
+
               return Container(
                 height: 180,
                 padding: const EdgeInsets.all(16),
@@ -357,7 +369,10 @@ class _VitalsSectionState extends State<_VitalsSection> {
                       // Heart Rate line
                       LineChartBarData(
                         spots: vitals.asMap().entries.map((e) {
-                          return FlSpot(e.key.toDouble(), e.value.heartRate.toDouble());
+                          return FlSpot(
+                            e.key.toDouble(),
+                            e.value.heartRate.toDouble(),
+                          );
                         }).toList(),
                         isCurved: true,
                         color: AppTheme.criticalRed,
@@ -367,7 +382,10 @@ class _VitalsSectionState extends State<_VitalsSection> {
                       // Oxygen line
                       LineChartBarData(
                         spots: vitals.asMap().entries.map((e) {
-                          return FlSpot(e.key.toDouble(), e.value.oxygenSaturation);
+                          return FlSpot(
+                            e.key.toDouble(),
+                            e.value.oxygenSaturation,
+                          );
                         }).toList(),
                         isCurved: true,
                         color: AppTheme.accentColor,
@@ -401,7 +419,9 @@ class _VitalsSectionState extends State<_VitalsSection> {
           const SizedBox(height: 12),
 
           StreamBuilder<List<VitalsModel>>(
-            stream: widget.databaseService.getVitalsForPatient(widget.patient.id),
+            stream: widget.databaseService.getVitalsForPatient(
+              widget.patient.id,
+            ),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Container(
@@ -440,7 +460,9 @@ class _VitalsSectionState extends State<_VitalsSection> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                DateFormat('MMM dd, yyyy • HH:mm').format(vital.timestamp),
+                                DateFormat(
+                                  'MMM dd, yyyy • HH:mm',
+                                ).format(vital.timestamp),
                                 style: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   color: AppTheme.primaryColor,
@@ -456,7 +478,11 @@ class _VitalsSectionState extends State<_VitalsSection> {
                                     ),
                                   ),
                                   const SizedBox(width: 4),
-                                  Icon(Icons.touch_app, size: 14, color: AppTheme.textSecondary),
+                                  Icon(
+                                    Icons.touch_app,
+                                    size: 14,
+                                    color: AppTheme.textSecondary,
+                                  ),
                                 ],
                               ),
                             ],
@@ -466,12 +492,40 @@ class _VitalsSectionState extends State<_VitalsSection> {
                             spacing: 16,
                             runSpacing: 4,
                             children: [
-                              _vitalChip('❤️ ${vital.heartRate} bpm', vital.isHeartRateAbnormal ? AppTheme.criticalRed : null),
-                              _vitalChip('💧 ${vital.oxygenSaturation.toStringAsFixed(0)}%', vital.isOxygenLow ? AppTheme.criticalRed : null),
-                              _vitalChip('🌡️ ${vital.temperature.toStringAsFixed(1)}°C', vital.isTemperatureAbnormal ? AppTheme.warningOrange : null),
-                              _vitalChip('🩸 ${vital.systolicBP}/${vital.diastolicBP}', vital.isBPAbnormal ? AppTheme.warningOrange : null),
-                              _vitalChip('🫁 ${vital.respiratoryRate}/min', vital.isRespiratoryAbnormal ? AppTheme.warningOrange : null),
-                              _vitalChip('🍬 ${vital.glucoseLevel.toStringAsFixed(0)} mg/dL', vital.isGlucoseAbnormal ? AppTheme.warningOrange : null),
+                              _vitalChip(
+                                '❤️ ${vital.heartRate} bpm',
+                                vital.isHeartRateAbnormal
+                                    ? AppTheme.criticalRed
+                                    : null,
+                              ),
+                              _vitalChip(
+                                '💧 ${vital.oxygenSaturation.toStringAsFixed(0)}%',
+                                vital.isOxygenLow ? AppTheme.criticalRed : null,
+                              ),
+                              _vitalChip(
+                                '🌡️ ${vital.temperature.toStringAsFixed(1)}°C',
+                                vital.isTemperatureAbnormal
+                                    ? AppTheme.warningOrange
+                                    : null,
+                              ),
+                              _vitalChip(
+                                '🩸 ${vital.systolicBP}/${vital.diastolicBP}',
+                                vital.isBPAbnormal
+                                    ? AppTheme.warningOrange
+                                    : null,
+                              ),
+                              _vitalChip(
+                                '🫁 ${vital.respiratoryRate}/min',
+                                vital.isRespiratoryAbnormal
+                                    ? AppTheme.warningOrange
+                                    : null,
+                              ),
+                              _vitalChip(
+                                '🍬 ${vital.glucoseLevel.toStringAsFixed(0)} mg/dL',
+                                vital.isGlucoseAbnormal
+                                    ? AppTheme.warningOrange
+                                    : null,
+                              ),
                             ],
                           ),
                         ],
@@ -654,13 +708,14 @@ class _VitalsSectionState extends State<_VitalsSection> {
                     children: [
                       Text(
                         'Vitals Details',
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        DateFormat('EEEE, MMMM dd, yyyy').format(vital.timestamp),
+                        DateFormat(
+                          'EEEE, MMMM dd, yyyy',
+                        ).format(vital.timestamp),
                         style: TextStyle(
                           fontSize: 14,
                           color: AppTheme.textSecondary,
@@ -669,7 +724,10 @@ class _VitalsSectionState extends State<_VitalsSection> {
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.primaryColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -719,14 +777,14 @@ class _VitalsSectionState extends State<_VitalsSection> {
                   _vitalDetailCard(
                     icon: '💧',
                     label: 'Oxygen Saturation',
-                    value: '${vital.oxygenSaturation.toStringAsFixed(1)}',
+                    value: vital.oxygenSaturation.toStringAsFixed(1),
                     unit: '%',
                     isAbnormal: vital.isOxygenLow,
                   ),
                   _vitalDetailCard(
                     icon: '🌡️',
                     label: 'Temperature',
-                    value: '${vital.temperature.toStringAsFixed(1)}',
+                    value: vital.temperature.toStringAsFixed(1),
                     unit: '°C',
                     isAbnormal: vital.isTemperatureAbnormal,
                   ),
@@ -747,7 +805,7 @@ class _VitalsSectionState extends State<_VitalsSection> {
                   _vitalDetailCard(
                     icon: '🍬',
                     label: 'Glucose Level',
-                    value: '${vital.glucoseLevel.toStringAsFixed(0)}',
+                    value: vital.glucoseLevel.toStringAsFixed(0),
                     unit: 'mg/dL',
                     isAbnormal: vital.isGlucoseAbnormal,
                   ),
@@ -782,7 +840,7 @@ class _VitalsSectionState extends State<_VitalsSection> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isAbnormal 
+        color: isAbnormal
             ? AppTheme.criticalRed.withValues(alpha: 0.1)
             : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(16),
@@ -801,10 +859,7 @@ class _VitalsSectionState extends State<_VitalsSection> {
               const SizedBox(width: 4),
               Text(
                 label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: AppTheme.textSecondary,
-                ),
+                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
               ),
             ],
           ),
@@ -819,16 +874,15 @@ class _VitalsSectionState extends State<_VitalsSection> {
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: isAbnormal ? AppTheme.criticalRed : AppTheme.textPrimary,
+                  color: isAbnormal
+                      ? AppTheme.criticalRed
+                      : AppTheme.textPrimary,
                 ),
               ),
               const SizedBox(width: 4),
               Text(
                 unit,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppTheme.textSecondary,
-                ),
+                style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
               ),
             ],
           ),
@@ -843,10 +897,7 @@ class _VitalsSectionState extends State<_VitalsSection> {
         Container(
           width: 12,
           height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
         Text(label, style: const TextStyle(fontSize: 12)),
@@ -954,7 +1005,7 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                   const SizedBox(height: 16),
 
                   DropdownButtonFormField<String>(
-                    value: selectedRoute,
+                    initialValue: selectedRoute,
                     decoration: const InputDecoration(
                       labelText: 'Route',
                       prefixIcon: Icon(Icons.route),
@@ -964,28 +1015,41 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                       DropdownMenuItem(value: 'iv', child: Text('IV')),
                       DropdownMenuItem(value: 'im', child: Text('IM')),
                       DropdownMenuItem(value: 'sc', child: Text('SC')),
-                      DropdownMenuItem(value: 'topical', child: Text('Topical')),
+                      DropdownMenuItem(
+                        value: 'topical',
+                        child: Text('Topical'),
+                      ),
                     ],
                     onChanged: (value) {
                       setModalState(() {
                         selectedRoute = value!;
-                        isInjection = value == 'iv' || value == 'im' || value == 'sc';
+                        isInjection =
+                            value == 'iv' || value == 'im' || value == 'sc';
                       });
                     },
                   ),
                   const SizedBox(height: 16),
 
                   DropdownButtonFormField<String>(
-                    value: selectedFrequency,
+                    initialValue: selectedFrequency,
                     decoration: const InputDecoration(
                       labelText: 'Frequency',
                       prefixIcon: Icon(Icons.schedule),
                     ),
                     items: const [
                       DropdownMenuItem(value: 'once', child: Text('Once')),
-                      DropdownMenuItem(value: 'bid', child: Text('Twice Daily')),
-                      DropdownMenuItem(value: 'tid', child: Text('Three Times Daily')),
-                      DropdownMenuItem(value: 'qid', child: Text('Four Times Daily')),
+                      DropdownMenuItem(
+                        value: 'bid',
+                        child: Text('Twice Daily'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'tid',
+                        child: Text('Three Times Daily'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'qid',
+                        child: Text('Four Times Daily'),
+                      ),
                       DropdownMenuItem(value: 'prn', child: Text('As Needed')),
                     ],
                     onChanged: (value) {
@@ -999,7 +1063,8 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                     height: 56,
                     child: ElevatedButton(
                       onPressed: () async {
-                        if (nameController.text.isEmpty || dosageController.text.isEmpty) {
+                        if (nameController.text.isEmpty ||
+                            dosageController.text.isEmpty) {
                           return;
                         }
 
@@ -1053,7 +1118,9 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
         // Medications list
         Expanded(
           child: StreamBuilder<List<MedicationModel>>(
-            stream: widget.databaseService.getMedicationsForPatient(widget.patient.id),
+            stream: widget.databaseService.getMedicationsForPatient(
+              widget.patient.id,
+            ),
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Center(
@@ -1084,7 +1151,10 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                   return _MedicationCard(
                     medication: med,
                     onAdminister: () async {
-                      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                      final authProvider = Provider.of<AuthProvider>(
+                        context,
+                        listen: false,
+                      );
                       await widget.databaseService.administerMedication(
                         medicationId: med.id,
                         nurseId: authProvider.currentUser?.id ?? '',
@@ -1106,10 +1176,7 @@ class _MedicationCard extends StatelessWidget {
   final MedicationModel medication;
   final VoidCallback onAdminister;
 
-  const _MedicationCard({
-    required this.medication,
-    required this.onAdminister,
-  });
+  const _MedicationCard({required this.medication, required this.onAdminister});
 
   @override
   Widget build(BuildContext context) {
@@ -1126,10 +1193,10 @@ class _MedicationCard extends StatelessWidget {
           color: isOverdue
               ? AppTheme.criticalRed
               : isPending
-                  ? AppTheme.warningOrange
-                  : medication.isAdministered
-                      ? AppTheme.successColor
-                      : AppTheme.dividerColor,
+              ? AppTheme.warningOrange
+              : medication.isAdministered
+              ? AppTheme.successColor
+              : AppTheme.dividerColor,
           width: isOverdue || isPending ? 2 : 1,
         ),
         boxShadow: [AppTheme.cardShadow],
@@ -1166,16 +1233,15 @@ class _MedicationCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${medication.dosage} • ${medication.routeLabel}',
-                  style: TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 14,
-                  ),
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   DateFormat('MMM dd, HH:mm').format(medication.scheduledTime),
                   style: TextStyle(
-                    color: isOverdue ? AppTheme.criticalRed : AppTheme.textSecondary,
+                    color: isOverdue
+                        ? AppTheme.criticalRed
+                        : AppTheme.textSecondary,
                     fontSize: 12,
                     fontWeight: isOverdue ? FontWeight.bold : FontWeight.normal,
                   ),
@@ -1204,7 +1270,11 @@ class _MedicationCard extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.check_circle, size: 16, color: AppTheme.successColor),
+                  Icon(
+                    Icons.check_circle,
+                    size: 16,
+                    color: AppTheme.successColor,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'Given',

@@ -44,9 +44,10 @@ class QueuedOperation {
 
 /// Service to queue write operations when offline and sync when online
 class OfflineQueueService {
+  // ignore: unused_field - Reserved for future offline sync implementation
   final DatabaseService _databaseService;
   final Logger _logger;
-  
+
   Database? _database;
   Timer? _syncTimer;
   bool _isSyncing = false;
@@ -54,8 +55,8 @@ class OfflineQueueService {
   OfflineQueueService({
     required DatabaseService databaseService,
     required Logger logger,
-  })  : _databaseService = databaseService,
-        _logger = logger;
+  }) : _databaseService = databaseService,
+       _logger = logger;
 
   /// Initialize the SQLite database for queue
   Future<void> initialize() async {
@@ -79,7 +80,7 @@ class OfflineQueueService {
     );
 
     _logger.i('📦 Offline queue initialized');
-    
+
     // Start periodic sync (every 30 seconds)
     _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       processPendingOperations();
@@ -135,7 +136,7 @@ class OfflineQueueService {
         } else {
           // Increment retry count
           await _incrementRetryCount(operation.id);
-          
+
           // Remove if retried too many times (max 5)
           if (operation.retryCount >= 5) {
             await _removeFromQueue(operation.id);

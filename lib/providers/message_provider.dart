@@ -6,7 +6,7 @@ import '../services/database_service.dart';
 class MessageProvider extends ChangeNotifier {
   final DatabaseService _databaseService = getIt<DatabaseService>();
 
-  List<MessageModel> _messages = [];
+  final List<MessageModel> _messages = [];
   bool _isLoading = false;
   String? _errorMessage;
   int _unreadCount = 0;

@@ -348,7 +348,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: DropdownButtonFormField<String>(
-                    value: _selectedGender,
+                    initialValue: _selectedGender,
                     decoration: const InputDecoration(
                       labelText: 'Gender',
                       prefixIcon: Icon(Icons.wc_outlined),
@@ -434,7 +434,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
 
             // Attending Doctor
             DropdownButtonFormField<UserModel>(
-              value: _selectedDoctor,
+              initialValue: _selectedDoctor,
               decoration: const InputDecoration(
                 labelText: 'Attending Doctor',
                 prefixIcon: Icon(Icons.local_hospital_outlined),
@@ -563,7 +563,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
                     onChanged: (value) {
                       setState(() => _isCritical = value);
                     },
-                    activeColor: AppTheme.criticalRed,
+                    activeThumbColor: AppTheme.criticalRed,
                   ),
                 ],
               ),

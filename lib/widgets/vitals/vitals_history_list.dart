@@ -21,9 +21,7 @@ class VitalsHistoryList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (vitals.isEmpty) {
-      return const Center(
-        child: Text('No vitals recorded yet'),
-      );
+      return const Center(child: Text('No vitals recorded yet'));
     }
 
     return ListView.builder(
@@ -84,8 +82,10 @@ class VitalsCard extends StatelessWidget {
                 ),
                 if (vital.hasAnyAlert)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppTheme.errorColor,
                       borderRadius: BorderRadius.circular(12),
@@ -102,28 +102,42 @@ class VitalsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            _buildVitalRow('Heart Rate', '${vital.heartRate} bpm',
-                vital.alerts['heart_rate'] == true),
-            _buildVitalRow('Blood Pressure',
-                '${vital.systolicBP}/${vital.diastolicBP} mmHg',
-                vital.alerts['blood_pressure'] == true),
-            _buildVitalRow('Oxygen', '${vital.oxygenSaturation}%',
-                vital.alerts['oxygen'] == true),
-            _buildVitalRow('Temperature', '${vital.temperature}°C',
-                vital.alerts['temperature'] == true),
-            if (vital.respiratoryRate != null)
-              _buildVitalRow('Respiratory Rate',
-                  '${vital.respiratoryRate} breaths/min', false),
-            if (vital.glucoseLevel != null)
-              _buildVitalRow(
-                  'Glucose', '${vital.glucoseLevel} mg/dL', false),
+            _buildVitalRow(
+              'Heart Rate',
+              '${vital.heartRate} bpm',
+              vital.alerts['heart_rate'] == true,
+            ),
+            _buildVitalRow(
+              'Blood Pressure',
+              '${vital.systolicBP}/${vital.diastolicBP} mmHg',
+              vital.alerts['blood_pressure'] == true,
+            ),
+            _buildVitalRow(
+              'Oxygen',
+              '${vital.oxygenSaturation}%',
+              vital.alerts['oxygen'] == true,
+            ),
+            _buildVitalRow(
+              'Temperature',
+              '${vital.temperature}°C',
+              vital.alerts['temperature'] == true,
+            ),
+            _buildVitalRow(
+              'Respiratory Rate',
+              '${vital.respiratoryRate} breaths/min',
+              false,
+            ),
+            _buildVitalRow('Glucose', '${vital.glucoseLevel} mg/dL', false),
             if (vital.notes != null && vital.notes!.isNotEmpty) ...[
               const SizedBox(height: 8),
               const Divider(),
               const SizedBox(height: 8),
               Text(
                 'Notes: ${vital.notes}',
-                style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
             const SizedBox(height: 8),

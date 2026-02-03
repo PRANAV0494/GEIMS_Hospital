@@ -9,7 +9,7 @@ class PatientProvider extends ChangeNotifier {
   final DatabaseService _databaseService = getIt<DatabaseService>();
 
   PatientModel? _selectedPatient;
-  List<PatientModel> _patients = [];
+  final List<PatientModel> _patients = [];
   List<VitalsModel> _vitals = [];
   List<MedicationModel> _medications = [];
   bool _isLoading = false;

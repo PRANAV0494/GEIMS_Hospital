@@ -13,7 +13,8 @@ class AdminDashboard extends StatefulWidget {
   State<AdminDashboard> createState() => _AdminDashboardState();
 }
 
-class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProviderStateMixin {
+class _AdminDashboardState extends State<AdminDashboard>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final AuthService _authService = AuthService();
   final DatabaseService _databaseService = DatabaseService();
@@ -57,7 +58,10 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+              final authProvider = Provider.of<AuthProvider>(
+                context,
+                listen: false,
+              );
               await authProvider.signOut();
               if (context.mounted) {
                 Navigator.pushReplacementNamed(context, '/login');
@@ -69,7 +73,10 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
       body: TabBarView(
         controller: _tabController,
         children: [
-          _OverviewTab(authService: _authService, databaseService: _databaseService),
+          _OverviewTab(
+            authService: _authService,
+            databaseService: _databaseService,
+          ),
           _BedMapTab(databaseService: _databaseService),
           _StaffListTab(
             title: 'Doctors',
@@ -168,9 +175,13 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
           ),
           ElevatedButton(
             onPressed: () async {
-              if (nameController.text.isEmpty || emailController.text.isEmpty || passwordController.text.isEmpty) {
+              if (nameController.text.isEmpty ||
+                  emailController.text.isEmpty ||
+                  passwordController.text.isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please fill all required fields')),
+                  const SnackBar(
+                    content: Text('Please fill all required fields'),
+                  ),
                 );
                 return;
               }
@@ -182,15 +193,22 @@ class _AdminDashboardState extends State<AdminDashboard> with SingleTickerProvid
                   name: nameController.text.trim(),
                   employeeId: employeeIdController.text.trim(),
                   role: role,
-                  assignedWard: wardController.text.trim().isNotEmpty ? wardController.text.trim() : null,
-                  specialization: specializationController.text.trim().isNotEmpty ? specializationController.text.trim() : null,
+                  assignedWard: wardController.text.trim().isNotEmpty
+                      ? wardController.text.trim()
+                      : null,
+                  specialization:
+                      specializationController.text.trim().isNotEmpty
+                      ? specializationController.text.trim()
+                      : null,
                 );
 
                 if (context.mounted) {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('${role == 'doctor' ? 'Doctor' : 'Nurse'} added successfully'),
+                      content: Text(
+                        '${role == 'doctor' ? 'Doctor' : 'Nurse'} added successfully',
+                      ),
                       backgroundColor: AppTheme.stableGreen,
                     ),
                   );
@@ -261,8 +279,10 @@ class _OverviewTabState extends State<_OverviewTab> {
       stream: widget.databaseService.getAllPatients(),
       builder: (context, snapshot) {
         final patients = snapshot.data ?? [];
-        final criticalPatients = patients.where((p) => p.status?.toLowerCase() == 'critical').toList();
-        
+        final criticalPatients = patients
+            .where((p) => p.status.toLowerCase() == 'critical')
+            .toList();
+
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -273,7 +293,10 @@ class _OverviewTabState extends State<_OverviewTab> {
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [AppTheme.primaryColor, AppTheme.primaryColor.withOpacity(0.8)],
+                    colors: [
+                      AppTheme.primaryColor,
+                      AppTheme.primaryColor.withValues(alpha: 0.8),
+                    ],
                   ),
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -282,10 +305,14 @@ class _OverviewTabState extends State<_OverviewTab> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.analytics, color: Colors.white, size: 32),
+                      child: const Icon(
+                        Icons.analytics,
+                        color: Colors.white,
+                        size: 32,
+                      ),
                     ),
                     const SizedBox(width: 16),
                     const Expanded(
@@ -303,7 +330,10 @@ class _OverviewTabState extends State<_OverviewTab> {
                           SizedBox(height: 4),
                           Text(
                             'Real-time overview of hospital status',
-                            style: TextStyle(color: Colors.white70, fontSize: 14),
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -315,7 +345,7 @@ class _OverviewTabState extends State<_OverviewTab> {
 
               // Stats Grid - uses cached staff counts and streamed patient data
               _buildStatsGrid(patients, criticalPatients.length),
-              
+
               const SizedBox(height: 24),
 
               // Critical Alerts Section - reuses same patient data
@@ -381,7 +411,9 @@ class _OverviewTabState extends State<_OverviewTab> {
                 title: 'Staff Loaded',
                 value: _staffLoaded ? '✓' : '...',
                 icon: Icons.sync,
-                color: _staffLoaded ? AppTheme.stableGreen : AppTheme.warningOrange,
+                color: _staffLoaded
+                    ? AppTheme.stableGreen
+                    : AppTheme.warningOrange,
               ),
             ),
             const SizedBox(width: 12),
@@ -404,9 +436,11 @@ class _OverviewTabState extends State<_OverviewTab> {
       return Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppTheme.stableGreen.withOpacity(0.1),
+          color: AppTheme.stableGreen.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppTheme.stableGreen.withOpacity(0.3)),
+          border: Border.all(
+            color: AppTheme.stableGreen.withValues(alpha: 0.3),
+          ),
         ),
         child: Row(
           children: [
@@ -432,66 +466,73 @@ class _OverviewTabState extends State<_OverviewTab> {
             const SizedBox(width: 8),
             Text(
               'Critical Alerts (${criticalPatients.length})',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        ...criticalPatients.map((patient) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppTheme.criticalRed.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.criticalRed.withOpacity(0.3)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.criticalRed.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.person, color: AppTheme.criticalRed),
+        ...criticalPatients.map(
+          (patient) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.criticalRed.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppTheme.criticalRed.withValues(alpha: 0.3),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      patient.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'Ward ${patient.wardNumber} • Bed ${patient.bedNumber}',
-                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                    ),
-                  ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppTheme.criticalRed.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.person, color: AppTheme.criticalRed),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppTheme.criticalRed,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'CRITICAL',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        patient.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        'Ward ${patient.wardNumber} • Bed ${patient.bedNumber}',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.criticalRed,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'CRITICAL',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        )),
+        ),
       ],
     );
   }
@@ -519,7 +560,7 @@ class _StatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -531,7 +572,7 @@ class _StatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: color, size: 24),
@@ -548,10 +589,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppTheme.textSecondary,
-            ),
+            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -602,7 +640,7 @@ class _BedMapTabState extends State<_BedMapTab> {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [Colors.indigo, Colors.indigo.withOpacity(0.8)],
+                colors: [Colors.indigo, Colors.indigo.withValues(alpha: 0.8)],
               ),
               borderRadius: BorderRadius.circular(16),
             ),
@@ -611,7 +649,7 @@ class _BedMapTabState extends State<_BedMapTab> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.bed, color: Colors.white, size: 32),
@@ -650,7 +688,7 @@ class _BedMapTabState extends State<_BedMapTab> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -721,7 +759,10 @@ class _BedMapTabState extends State<_BedMapTab> {
           ),
         ),
         const SizedBox(width: 8),
-        Text(label, style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+        Text(
+          label,
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+        ),
       ],
     );
   }
@@ -731,7 +772,7 @@ class _BedMapTabState extends State<_BedMapTab> {
       stream: widget.databaseService.getPatientsForWard(_selectedWard),
       builder: (context, snapshot) {
         final patients = snapshot.data ?? [];
-        
+
         // Create a map of bed number to patient
         final bedPatientMap = <int, dynamic>{};
         for (final patient in patients) {
@@ -752,7 +793,8 @@ class _BedMapTabState extends State<_BedMapTab> {
             final bedNumber = index + 1;
             final patient = bedPatientMap[bedNumber];
             final isOccupied = patient != null;
-            final isCritical = isOccupied && patient.status?.toLowerCase() == 'critical';
+            final isCritical =
+                isOccupied && patient.status?.toLowerCase() == 'critical';
 
             Color bedColor;
             if (isCritical) {
@@ -767,7 +809,7 @@ class _BedMapTabState extends State<_BedMapTab> {
               onTap: isOccupied ? () => _showPatientDetails(patient) : null,
               child: Container(
                 decoration: BoxDecoration(
-                  color: bedColor.withOpacity(0.15),
+                  color: bedColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: bedColor, width: 2),
                 ),
@@ -858,9 +900,7 @@ class _BedMapTabState extends State<_BedMapTab> {
               ),
             ),
           ),
-          Expanded(
-            child: Text(value),
-          ),
+          Expanded(child: Text(value)),
         ],
       ),
     );
@@ -887,7 +927,9 @@ class _StaffListTab extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: FutureBuilder<List<UserModel>>(
-        future: role == 'doctor' ? authService.getAllDoctors() : authService.getAllNurses(),
+        future: role == 'doctor'
+            ? authService.getAllDoctors()
+            : authService.getAllNurses(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -899,14 +941,19 @@ class _StaffListTab extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    role == 'doctor' ? Icons.medical_services_outlined : Icons.person_outline,
+                    role == 'doctor'
+                        ? Icons.medical_services_outlined
+                        : Icons.person_outline,
                     size: 80,
                     color: Colors.grey.shade300,
                   ),
                   const SizedBox(height: 16),
                   Text(
                     'No ${role}s found',
-                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 16),
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 16,
+                    ),
                   ),
                 ],
               ),
@@ -950,7 +997,9 @@ class _StaffListTab extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.criticalRed),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.criticalRed,
+            ),
             onPressed: () async {
               try {
                 await databaseService.deleteUser(user.id);
@@ -986,10 +1035,7 @@ class _StaffCard extends StatelessWidget {
   final UserModel user;
   final VoidCallback onDelete;
 
-  const _StaffCard({
-    required this.user,
-    required this.onDelete,
-  });
+  const _StaffCard({required this.user, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -999,7 +1045,7 @@ class _StaffCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1009,8 +1055,8 @@ class _StaffCard extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
           backgroundColor: user.isDoctor
-              ? AppTheme.primaryColor.withOpacity(0.1)
-              : AppTheme.stableGreen.withOpacity(0.1),
+              ? AppTheme.primaryColor.withValues(alpha: 0.1)
+              : AppTheme.stableGreen.withValues(alpha: 0.1),
           child: Icon(
             user.isDoctor ? Icons.medical_services : Icons.person,
             color: user.isDoctor ? AppTheme.primaryColor : AppTheme.stableGreen,
@@ -1023,11 +1069,20 @@ class _StaffCard extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(user.email, style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+            Text(
+              user.email,
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+            ),
             if (user.assignedWard != null)
-              Text('Ward: ${user.assignedWard}', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+              Text(
+                'Ward: ${user.assignedWard}',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+              ),
             if (user.specialization != null)
-              Text(user.specialization!, style: TextStyle(color: AppTheme.primaryColor, fontSize: 12)),
+              Text(
+                user.specialization!,
+                style: TextStyle(color: AppTheme.primaryColor, fontSize: 12),
+              ),
           ],
         ),
         trailing: IconButton(
@@ -1085,7 +1140,9 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(success ? 'Configuration saved!' : 'Failed to save'),
-          backgroundColor: success ? AppTheme.stableGreen : AppTheme.criticalRed,
+          backgroundColor: success
+              ? AppTheme.stableGreen
+              : AppTheme.criticalRed,
         ),
       );
     }
@@ -1107,7 +1164,10 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [AppTheme.primaryColor, AppTheme.primaryColor.withOpacity(0.8)],
+                colors: [
+                  AppTheme.primaryColor,
+                  AppTheme.primaryColor.withValues(alpha: 0.8),
+                ],
               ),
               borderRadius: BorderRadius.circular(16),
             ),
@@ -1116,10 +1176,14 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
+                    color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Icon(Icons.apartment, color: Colors.white, size: 32),
+                  child: const Icon(
+                    Icons.apartment,
+                    color: Colors.white,
+                    size: 32,
+                  ),
                 ),
                 const SizedBox(width: 16),
                 const Expanded(
@@ -1177,9 +1241,11 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.stableGreen.withOpacity(0.1),
+              color: AppTheme.stableGreen.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.stableGreen.withOpacity(0.3)),
+              border: Border.all(
+                color: AppTheme.stableGreen.withValues(alpha: 0.3),
+              ),
             ),
             child: Row(
               children: [
@@ -1209,14 +1275,19 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
                     )
                   : const Icon(Icons.save),
               label: Text(_isSaving ? 'Saving...' : 'Save Configuration'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.primaryColor,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
@@ -1240,7 +1311,7 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -1251,7 +1322,7 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.1),
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: AppTheme.primaryColor, size: 28),
@@ -1270,10 +1341,7 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
                 ),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                 ),
               ],
             ),
@@ -1315,4 +1383,3 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
     );
   }
 }
-

@@ -9,11 +9,8 @@ import '../../services/database_service.dart';
 
 class TasksTab extends StatefulWidget {
   final int wardNumber;
-  
-  const TasksTab({
-    super.key,
-    required this.wardNumber,
-  });
+
+  const TasksTab({super.key, required this.wardNumber});
 
   @override
   State<TasksTab> createState() => _TasksTabState();
@@ -45,9 +42,27 @@ class _TasksTabState extends State<TasksTab> {
           }
 
           final tasks = snapshot.data!;
-          final overdue = tasks.where((t) => !t.isCompleted && t.dueDate.isBefore(DateTime.now())).toList();
-          final today = tasks.where((t) => !t.isCompleted && _isToday(t.dueDate) && t.dueDate.isAfter(DateTime.now())).toList();
-          final upcoming = tasks.where((t) => !t.isCompleted && !_isToday(t.dueDate) && t.dueDate.isAfter(DateTime.now())).toList();
+          final overdue = tasks
+              .where(
+                (t) => !t.isCompleted && t.dueDate.isBefore(DateTime.now()),
+              )
+              .toList();
+          final today = tasks
+              .where(
+                (t) =>
+                    !t.isCompleted &&
+                    _isToday(t.dueDate) &&
+                    t.dueDate.isAfter(DateTime.now()),
+              )
+              .toList();
+          final upcoming = tasks
+              .where(
+                (t) =>
+                    !t.isCompleted &&
+                    !_isToday(t.dueDate) &&
+                    t.dueDate.isAfter(DateTime.now()),
+              )
+              .toList();
           final completed = tasks.where((t) => t.isCompleted).toList();
 
           return ListView(
@@ -55,25 +70,49 @@ class _TasksTabState extends State<TasksTab> {
             children: [
               if (overdue.isNotEmpty) ...[
                 _buildSectionHeader('Overdue', AppTheme.criticalRed),
-                ...overdue.map((t) => _TaskCard(task: t, databaseService: _databaseService, currentUser: currentUser)),
+                ...overdue.map(
+                  (t) => _TaskCard(
+                    task: t,
+                    databaseService: _databaseService,
+                    currentUser: currentUser,
+                  ),
+                ),
                 const SizedBox(height: 16),
               ],
-              
+
               if (today.isNotEmpty) ...[
                 _buildSectionHeader('Today', AppTheme.primaryColor),
-                ...today.map((t) => _TaskCard(task: t, databaseService: _databaseService, currentUser: currentUser)),
+                ...today.map(
+                  (t) => _TaskCard(
+                    task: t,
+                    databaseService: _databaseService,
+                    currentUser: currentUser,
+                  ),
+                ),
                 const SizedBox(height: 16),
               ],
 
               if (upcoming.isNotEmpty) ...[
                 _buildSectionHeader('Upcoming', AppTheme.textPrimary),
-                ...upcoming.map((t) => _TaskCard(task: t, databaseService: _databaseService, currentUser: currentUser)),
+                ...upcoming.map(
+                  (t) => _TaskCard(
+                    task: t,
+                    databaseService: _databaseService,
+                    currentUser: currentUser,
+                  ),
+                ),
                 const SizedBox(height: 16),
               ],
 
               if (completed.isNotEmpty) ...[
                 _buildSectionHeader('Completed', AppTheme.stableGreen),
-                ...completed.map((t) => _TaskCard(task: t, databaseService: _databaseService, currentUser: currentUser)),
+                ...completed.map(
+                  (t) => _TaskCard(
+                    task: t,
+                    databaseService: _databaseService,
+                    currentUser: currentUser,
+                  ),
+                ),
               ],
             ],
           );
@@ -90,7 +129,9 @@ class _TasksTabState extends State<TasksTab> {
 
   bool _isToday(DateTime date) {
     final now = DateTime.now();
-    return date.year == now.year && date.month == now.month && date.day == now.day;
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
   }
 
   Widget _buildSectionHeader(String title, Color color) {
@@ -129,9 +170,7 @@ class _TasksTabState extends State<TasksTab> {
           const SizedBox(height: 8),
           Text(
             'Tap + to add a new task',
-            style: TextStyle(
-              color: AppTheme.textSecondary,
-            ),
+            style: TextStyle(color: AppTheme.textSecondary),
           ),
         ],
       ),
@@ -159,37 +198,38 @@ class _TasksTabState extends State<TasksTab> {
                 StreamBuilder<List<PatientModel>>(
                   stream: _databaseService.getPatientsByWard(widget.wardNumber),
                   builder: (context, snapshot) {
-                     if (!snapshot.hasData) return const SizedBox.shrink();
-                     final patients = snapshot.data!;
-                     
-                     // Reset if selected patient no longer exists in list
-                     if (selectedPatientId != null && !patients.any((p) => p.id == selectedPatientId)) {
-                       selectedPatientId = null;
-                     }
+                    if (!snapshot.hasData) return const SizedBox.shrink();
+                    final patients = snapshot.data!;
 
-                     return DropdownButtonFormField<String>(
-                       value: selectedPatientId,
-                       decoration: const InputDecoration(
-                         labelText: 'Select Patient',
-                         prefixIcon: Icon(Icons.person),
-                       ),
-                       items: patients.map((patient) {
-                         return DropdownMenuItem(
-                           value: patient.id,
-                           child: Text(
-                             '${patient.name} (Bed ${patient.bedNumber})',
-                             overflow: TextOverflow.ellipsis,
-                           ),
-                         );
-                       }).toList(),
-                       onChanged: (value) {
-                         setState(() => selectedPatientId = value);
-                       },
-                     );
+                    // Reset if selected patient no longer exists in list
+                    if (selectedPatientId != null &&
+                        !patients.any((p) => p.id == selectedPatientId)) {
+                      selectedPatientId = null;
+                    }
+
+                    return DropdownButtonFormField<String>(
+                      initialValue: selectedPatientId,
+                      decoration: const InputDecoration(
+                        labelText: 'Select Patient',
+                        prefixIcon: Icon(Icons.person),
+                      ),
+                      items: patients.map((patient) {
+                        return DropdownMenuItem(
+                          value: patient.id,
+                          child: Text(
+                            '${patient.name} (Bed ${patient.bedNumber})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() => selectedPatientId = value);
+                      },
+                    );
                   },
                 ),
                 const SizedBox(height: 16),
-                
+
                 TextField(
                   controller: titleController,
                   decoration: const InputDecoration(
@@ -215,7 +255,9 @@ class _TasksTabState extends State<TasksTab> {
                             context: context,
                             initialDate: selectedDate,
                             firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 30)),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 30),
+                            ),
                           );
                           if (date != null) {
                             setState(() => selectedDate = date);
@@ -254,14 +296,16 @@ class _TasksTabState extends State<TasksTab> {
               onPressed: () async {
                 if (titleController.text.trim().isEmpty) return;
                 if (selectedPatientId == null) {
-                   ScaffoldMessenger.of(context).showSnackBar(
-                     const SnackBar(content: Text('Please select a patient')),
-                   );
-                   return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please select a patient')),
+                  );
+                  return;
                 }
 
                 // Fetch patient details needed for the task
-                final patient = await _databaseService.getPatient(selectedPatientId!);
+                final patient = await _databaseService.getPatient(
+                  selectedPatientId!,
+                );
                 if (patient == null) return;
 
                 final dueDate = DateTime(
@@ -311,7 +355,8 @@ class _TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isOverdue = !task.isCompleted && task.dueDate.isBefore(DateTime.now());
+    final isOverdue =
+        !task.isCompleted && task.dueDate.isBefore(DateTime.now());
 
     return Dismissible(
       key: Key(task.id),
@@ -335,30 +380,37 @@ class _TaskCard extends StatelessWidget {
               offset: const Offset(0, 2),
             ),
           ],
-          border: isOverdue ? Border.all(color: AppTheme.criticalRed.withValues(alpha: 0.5)) : null,
+          border: isOverdue
+              ? Border.all(color: AppTheme.criticalRed.withValues(alpha: 0.5))
+              : null,
         ),
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
-            tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 8,
+            ),
             leading: Transform.scale(
               scale: 1.2,
               child: Checkbox(
                 value: task.isCompleted,
-                onChanged: task.isCompleted 
-                    ? null 
+                onChanged: task.isCompleted
+                    ? null
                     : (value) => databaseService.updateTaskStatus(
                         taskId: task.id,
                         isCompleted: value ?? false,
                         completedByNurseId: currentUser.id,
                         completedByNurseName: currentUser.name,
                       ),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
                 activeColor: AppTheme.stableGreen,
                 // Make disabled look like checked but static
                 fillColor: WidgetStateProperty.resolveWith((states) {
                   if (states.contains(WidgetState.disabled)) {
-                    return AppTheme.stableGreen.withOpacity(0.6);
+                    return AppTheme.stableGreen.withValues(alpha: 0.6);
                   }
                   if (states.contains(WidgetState.selected)) {
                     return AppTheme.stableGreen;
@@ -372,22 +424,26 @@ class _TaskCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                decoration: task.isCompleted ? TextDecoration.lineThrough : null,
-                color: task.isCompleted ? AppTheme.textSecondary : AppTheme.textPrimary,
+                decoration: task.isCompleted
+                    ? TextDecoration.lineThrough
+                    : null,
+                color: task.isCompleted
+                    ? AppTheme.textSecondary
+                    : AppTheme.textPrimary,
               ),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                 Text(
-                   'Patient: ${task.patientName}',
-                    style: TextStyle(
-                      color: AppTheme.primaryColor,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 13,
-                    ),
-                 ),
-                 if (task.description.isNotEmpty)
+                Text(
+                  'Patient: ${task.patientName}',
+                  style: TextStyle(
+                    color: AppTheme.primaryColor,
+                    fontWeight: FontWeight.w500,
+                    fontSize: 13,
+                  ),
+                ),
+                if (task.description.isNotEmpty)
                   Text(
                     task.description,
                     style: TextStyle(
@@ -416,7 +472,8 @@ class _TaskCard extends StatelessWidget {
                       DateFormat('MMM dd, HH:mm').format(task.dueDate),
                       isUrgent: isOverdue,
                     ),
-                    if (task.isCompleted && task.completedByNurseName != null) ...[
+                    if (task.isCompleted &&
+                        task.completedByNurseName != null) ...[
                       const SizedBox(height: 8),
                       _buildDetailRow(
                         Icons.check_circle_outline,
@@ -435,13 +492,21 @@ class _TaskCard extends StatelessWidget {
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value, {bool isUrgent = false, Color? color}) {
+  Widget _buildDetailRow(
+    IconData icon,
+    String label,
+    String value, {
+    bool isUrgent = false,
+    Color? color,
+  }) {
     return Row(
       children: [
         Icon(
           icon,
           size: 16,
-          color: color ?? (isUrgent ? AppTheme.criticalRed : AppTheme.textSecondary),
+          color:
+              color ??
+              (isUrgent ? AppTheme.criticalRed : AppTheme.textSecondary),
         ),
         const SizedBox(width: 8),
         Text(
@@ -457,7 +522,9 @@ class _TaskCard extends StatelessWidget {
             value,
             style: TextStyle(
               fontSize: 13,
-              color: color ?? (isUrgent ? AppTheme.criticalRed : AppTheme.textPrimary),
+              color:
+                  color ??
+                  (isUrgent ? AppTheme.criticalRed : AppTheme.textPrimary),
               fontWeight: isUrgent ? FontWeight.bold : FontWeight.normal,
             ),
           ),
