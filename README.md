@@ -17,7 +17,7 @@
 
 ## 🏥 Overview
 
-**GEIMS Hospital** (Graphic Era Integrated Medical System) is a production-ready Flutter application designed to streamline hospital operations. It provides distinct dashboards for **Nurses**, **Doctors**, and **Administrators**, ensuring each staff member has access to role-appropriate tools and information.
+**GEIMS Hospital** (Graphic Era Institute of Medical Sciences) is a production-ready Flutter application designed to streamline hospital operations. It provides distinct dashboards for **Nurses**, **Doctors**, and **Administrators**, ensuring each staff member has access to role-appropriate tools and information.
 
 ### ✨ Key Highlights
 
