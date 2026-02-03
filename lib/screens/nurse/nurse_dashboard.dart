@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/service_locator.dart';
 import '../../config/app_theme.dart';
 import '../../config/constants.dart';
 import '../../config/routes.dart';
@@ -20,6 +21,7 @@ class NurseDashboard extends StatefulWidget {
 }
 
 class _NurseDashboardState extends State<NurseDashboard> {
+  final DatabaseService _databaseService = getIt<DatabaseService>();
   int _currentIndex = 0;
   int _selectedWard = 1;
   int _selectedBed = 1;
@@ -94,8 +96,14 @@ class _NurseDashboardState extends State<NurseDashboard> {
     }
   }
 
+  void _updateWardBed(int ward, int bed) {
+    setState(() {
+      _selectedWard = ward;
+      _selectedBed = bed;
+    });
+  }
+
   void _showWardBedSelector() {
-    final databaseService = DatabaseService();
 
     showModalBottomSheet(
       context: context,
@@ -104,7 +112,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => FutureBuilder<Map<String, dynamic>?>(
-        future: databaseService.getHospitalConfig(),
+        future: _databaseService.getHospitalConfig(),
         builder: (context, configSnapshot) {
           final totalWards = configSnapshot.data?['totalWards'] ?? 10;
           final bedsPerWard = configSnapshot.data?['bedsPerWard'] ?? 20;

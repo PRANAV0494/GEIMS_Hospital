@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
+import '../core/service_locator.dart';
 import '../models/patient_model.dart';
 import '../models/vitals_model.dart';
 import '../models/medication_model.dart';
 import '../services/database_service.dart';
 
 class PatientProvider extends ChangeNotifier {
-  final DatabaseService _databaseService = DatabaseService();
+  final DatabaseService _databaseService = getIt<DatabaseService>();
 
   PatientModel? _selectedPatient;
   List<PatientModel> _patients = [];

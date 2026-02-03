@@ -10,6 +10,14 @@
       ]
     },
     {
+      "collectionGroup": "patients",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "wardNumber", "order": "ASCENDING" },
+        { "fieldPath": "bedNumber", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "vitals",
       "queryScope": "COLLECTION",
       "fields": [
@@ -26,11 +34,28 @@
       ]
     },
     {
+      "collectionGroup": "medications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientId", "order": "ASCENDING" },
+        { "fieldPath": "isAdministered", "order": "ASCENDING" },
+        { "fieldPath": "scheduledTime", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "messages",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "patientId", "order": "ASCENDING" },
         { "fieldPath": "sentAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "messages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "receiverId", "order": "ASCENDING" },
+        { "fieldPath": "isRead", "order": "ASCENDING" }
       ]
     },
     {
