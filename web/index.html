@@ -31,6 +31,28 @@
 
   <title>graphic_era_hospital</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js"></script>
+  
+  <script>
+    // Your Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyA_1nOWWqnatkeLsp1X_1prT6nhhpZbWmM",
+      authDomain: "hospital-a5d2b.firebaseapp.com",
+      projectId: "hospital-a5d2b",
+      storageBucket: "hospital-a5d2b.firebasestorage.app",
+      messagingSenderId: "558209200706",
+      appId: "1:558209200706:web:67ade98f1d404562a473db"
+    };
+    
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

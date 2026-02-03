@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../models/patient_model.dart';
@@ -11,12 +12,50 @@ class DatabaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final Uuid _uuid = const Uuid();
 
+  // ==================== RETRY LOGIC ====================
+
+  /// Retry helper with exponential backoff for transient failures
+  Future<T> _withRetry<T>(
+    Future<T> Function() operation, {
+    int maxAttempts = 3,
+    Duration initialDelay = const Duration(milliseconds: 500),
+  }) async {
+    int attempt = 0;
+    Duration delay = initialDelay;
+
+    while (true) {
+      try {
+        attempt++;
+        return await operation();
+      } catch (e) {
+        if (attempt >= maxAttempts) {
+          rethrow;
+        }
+        // Check if it's a retryable error (network, timeout)
+        final errorString = e.toString().toLowerCase();
+        if (errorString.contains('network') ||
+            errorString.contains('timeout') ||
+            errorString.contains('unavailable')) {
+          await Future.delayed(delay);
+          delay *= 2; // Exponential backoff
+        } else {
+          rethrow; // Non-retryable error
+        }
+      }
+    }
+  }
+
   // ==================== USERS ====================
 
   // Update user profile
   Future<bool> updateUser(String userId, Map<String, dynamic> data) async {
     try {
-      await _firestore.collection(AppConstants.usersCollection).doc(userId).update(data);
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.usersCollection)
+            .doc(userId)
+            .update(data),
+      );
       return true;
     } catch (e) {
       return false;
@@ -26,7 +65,10 @@ class DatabaseService {
   // Delete user (for admin)
   Future<bool> deleteUser(String userId) async {
     try {
-      await _firestore.collection(AppConstants.usersCollection).doc(userId).delete();
+      await _firestore
+          .collection(AppConstants.usersCollection)
+          .doc(userId)
+          .delete();
       return true;
     } catch (e) {
       return false;
@@ -68,17 +110,39 @@ class DatabaseService {
 
   // ==================== PATIENTS ====================
 
-  // Get all patients (for global search)
+  // Get all patients (for global search - limited for performance)
   Stream<List<PatientModel>> getAllPatients() {
     return _firestore
         .collection(AppConstants.patientsCollection)
-        .limit(100) // Limit to prevent loading excessive data
+        .orderBy('wardNumber')
+        .orderBy('bedNumber')
+        .limit(100)
         .snapshots()
         .map((snapshot) {
           return snapshot.docs
               .map((doc) => PatientModel.fromFirestore(doc))
               .toList();
         });
+  }
+
+  // Get unique wards for a doctor (efficient aggregation)
+  Future<List<int>> getDoctorWards(String doctorId) async {
+    try {
+      final snapshot = await _firestore
+          .collection(AppConstants.patientsCollection)
+          .where('attendingDoctorId', isEqualTo: doctorId)
+          .get();
+
+      final wards =
+          snapshot.docs
+              .map((doc) => doc.data()['wardNumber'] as int)
+              .toSet()
+              .toList()
+            ..sort();
+      return wards;
+    } catch (e) {
+      return [];
+    }
   }
 
   // Get all patients for a specific ward
@@ -86,6 +150,7 @@ class DatabaseService {
     return _firestore
         .collection(AppConstants.patientsCollection)
         .where('wardNumber', isEqualTo: wardNumber)
+        .orderBy('bedNumber')
         .snapshots()
         .map((snapshot) {
           return snapshot.docs
@@ -94,39 +159,32 @@ class DatabaseService {
         });
   }
 
-  // Get all patients for a doctor
+  // Get all patients for a doctor with server-side ordering
   Stream<List<PatientModel>> getPatientsForDoctor(String doctorId) {
     return _firestore
         .collection(AppConstants.patientsCollection)
         .where('attendingDoctorId', isEqualTo: doctorId)
+        .orderBy('wardNumber')
+        .orderBy('bedNumber')
         .snapshots()
         .map((snapshot) {
-          final patients = snapshot.docs
+          return snapshot.docs
               .map((doc) => PatientModel.fromFirestore(doc))
               .toList();
-          // Sort client-side to avoid needing composite index
-          patients.sort((a, b) {
-            final wardCompare = a.wardNumber.compareTo(b.wardNumber);
-            if (wardCompare != 0) return wardCompare;
-            return a.bedNumber.compareTo(b.bedNumber);
-          });
-          return patients;
         });
   }
 
-  // Get patients by ward for nurse
+  // Get patients by ward for nurse with server-side ordering
   Stream<List<PatientModel>> getPatientsByWard(int wardNumber) {
     return _firestore
         .collection(AppConstants.patientsCollection)
         .where('wardNumber', isEqualTo: wardNumber)
+        .orderBy('bedNumber')
         .snapshots()
         .map((snapshot) {
-          final patients = snapshot.docs
+          return snapshot.docs
               .map((doc) => PatientModel.fromFirestore(doc))
               .toList();
-          // Sort client-side
-          patients.sort((a, b) => a.bedNumber.compareTo(b.bedNumber));
-          return patients;
         });
   }
 
@@ -146,15 +204,41 @@ class DatabaseService {
     }
   }
 
+  // Get next patient code with atomic increment
+  Future<String> _getNextPatientCode() async {
+    final counterRef = _firestore.collection('config').doc('patient_counter');
+
+    return await _firestore.runTransaction<String>((transaction) async {
+      final counterDoc = await transaction.get(counterRef);
+
+      int nextNumber;
+      if (counterDoc.exists) {
+        nextNumber = (counterDoc.data()?['counter'] ?? 0) + 1;
+      } else {
+        nextNumber = 1;
+      }
+
+      transaction.set(counterRef, {
+        'counter': nextNumber,
+      }, SetOptions(merge: true));
+
+      // Format as GEIMS0001, GEIMS0002, etc.
+      return 'GEIMS${nextNumber.toString().padLeft(4, '0')}';
+    });
+  }
+
   // Add new patient
   Future<String?> addPatient(PatientModel patient) async {
     try {
       final id = _uuid.v4();
-      final newPatient = patient.copyWith(id: id);
-      await _firestore
-          .collection(AppConstants.patientsCollection)
-          .doc(id)
-          .set(newPatient.toMap());
+      final patientCode = await _getNextPatientCode();
+      final newPatient = patient.copyWith(id: id, patientCode: patientCode);
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.patientsCollection)
+            .doc(id)
+            .set(newPatient.toMap()),
+      );
       return id;
     } catch (e) {
       return null;
@@ -164,10 +248,12 @@ class DatabaseService {
   // Update patient
   Future<bool> updatePatient(PatientModel patient) async {
     try {
-      await _firestore
-          .collection(AppConstants.patientsCollection)
-          .doc(patient.id)
-          .update(patient.copyWith(updatedAt: DateTime.now()).toMap());
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.patientsCollection)
+            .doc(patient.id)
+            .update(patient.copyWith(updatedAt: DateTime.now()).toMap()),
+      );
       return true;
     } catch (e) {
       return false;
@@ -176,38 +262,33 @@ class DatabaseService {
 
   // ==================== VITALS ====================
 
-  // Get vitals for patient (real-time stream)
+  // Get vitals for patient with server-side ordering and pagination
   Stream<List<VitalsModel>> getVitalsForPatient(String patientId) {
     return _firestore
         .collection(AppConstants.vitalsCollection)
         .where('patientId', isEqualTo: patientId)
-        .limit(50) // Server-side limit instead of client-side
+        .orderBy('timestamp', descending: true)
+        .limit(50)
         .snapshots()
         .map((snapshot) {
-          final vitals = snapshot.docs
+          return snapshot.docs
               .map((doc) => VitalsModel.fromFirestore(doc))
               .toList();
-          // Sort client-side by timestamp descending
-          vitals.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-          return vitals;
         });
   }
 
-  // Get latest vitals for patient
+  // Get latest vitals for patient (optimized with limit 1)
   Future<VitalsModel?> getLatestVitals(String patientId) async {
     try {
       final snapshot = await _firestore
           .collection(AppConstants.vitalsCollection)
           .where('patientId', isEqualTo: patientId)
+          .orderBy('timestamp', descending: true)
+          .limit(1)
           .get();
 
       if (snapshot.docs.isNotEmpty) {
-        final vitals = snapshot.docs
-            .map((doc) => VitalsModel.fromFirestore(doc))
-            .toList();
-        // Sort client-side and get the latest
-        vitals.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        return vitals.first;
+        return VitalsModel.fromFirestore(snapshot.docs.first);
       }
       return null;
     } catch (e) {
@@ -215,7 +296,7 @@ class DatabaseService {
     }
   }
 
-  // Add vitals record
+  // Add vitals record with retry
   Future<String?> addVitals(VitalsModel vitals) async {
     try {
       final id = _uuid.v4();
@@ -235,10 +316,12 @@ class DatabaseService {
         notes: vitals.notes,
         alerts: vitals.calculateAlerts(),
       );
-      await _firestore
-          .collection(AppConstants.vitalsCollection)
-          .doc(id)
-          .set(newVitals.toMap());
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.vitalsCollection)
+            .doc(id)
+            .set(newVitals.toMap()),
+      );
 
       // Check for alerts and update patient status
       if (newVitals.hasAnyAlert) {
@@ -256,20 +339,18 @@ class DatabaseService {
 
   // ==================== MEDICATIONS ====================
 
-  // Get medications for patient
+  // Get medications for patient with server-side ordering
   Stream<List<MedicationModel>> getMedicationsForPatient(String patientId) {
     return _firestore
         .collection(AppConstants.medicationsCollection)
         .where('patientId', isEqualTo: patientId)
-        .limit(50) // Server-side limit
+        .orderBy('scheduledTime', descending: true)
+        .limit(50)
         .snapshots()
         .map((snapshot) {
-          final meds = snapshot.docs
+          return snapshot.docs
               .map((doc) => MedicationModel.fromFirestore(doc))
               .toList();
-          // Sort client-side by scheduledTime descending
-          meds.sort((a, b) => b.scheduledTime.compareTo(a.scheduledTime));
-          return meds;
         });
   }
 
@@ -279,29 +360,29 @@ class DatabaseService {
       final snapshot = await _firestore
           .collection(AppConstants.medicationsCollection)
           .where('patientId', isEqualTo: patientId)
+          .where('isAdministered', isEqualTo: false)
+          .orderBy('scheduledTime')
           .get();
 
-      final meds = snapshot.docs
+      return snapshot.docs
           .map((doc) => MedicationModel.fromFirestore(doc))
-          .where((med) => !med.isAdministered)
           .toList();
-      // Sort client-side
-      meds.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
-      return meds;
     } catch (e) {
       return [];
     }
   }
 
-  // Add medication
+  // Add medication with retry
   Future<String?> addMedication(MedicationModel medication) async {
     try {
       final id = _uuid.v4();
       final newMedication = medication.copyWith(id: id);
-      await _firestore
-          .collection(AppConstants.medicationsCollection)
-          .doc(id)
-          .set(newMedication.toMap());
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.medicationsCollection)
+            .doc(id)
+            .set(newMedication.toMap()),
+      );
       return id;
     } catch (e) {
       return null;
@@ -315,15 +396,17 @@ class DatabaseService {
     required String nurseName,
   }) async {
     try {
-      await _firestore
-          .collection(AppConstants.medicationsCollection)
-          .doc(medicationId)
-          .update({
-        'isAdministered': true,
-        'administeredTime': Timestamp.now(),
-        'administeredById': nurseId,
-        'administeredByName': nurseName,
-      });
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.medicationsCollection)
+            .doc(medicationId)
+            .update({
+              'isAdministered': true,
+              'administeredTime': Timestamp.now(),
+              'administeredById': nurseId,
+              'administeredByName': nurseName,
+            }),
+      );
       return true;
     } catch (e) {
       return false;
@@ -332,19 +415,18 @@ class DatabaseService {
 
   // ==================== MESSAGES ====================
 
-  // Get messages for a patient conversation (between nurse and doctor)
+  // Get messages for a patient conversation with server-side ordering and limit
   Stream<List<MessageModel>> getMessagesForPatient(String patientId) {
     return _firestore
         .collection(AppConstants.messagesCollection)
         .where('patientId', isEqualTo: patientId)
+        .orderBy('sentAt')
+        .limit(50)
         .snapshots()
         .map((snapshot) {
-          final messages = snapshot.docs
+          return snapshot.docs
               .map((doc) => MessageModel.fromFirestore(doc))
               .toList();
-          // Sort client-side by sentAt ascending
-          messages.sort((a, b) => a.sentAt.compareTo(b.sentAt));
-          return messages;
         });
   }
 
@@ -362,15 +444,17 @@ class DatabaseService {
     }
   }
 
-  // Send message
+  // Send message with retry
   Future<String?> sendMessage(MessageModel message) async {
     try {
       final id = _uuid.v4();
       final newMessage = message.copyWith(id: id, isDelivered: true);
-      await _firestore
-          .collection(AppConstants.messagesCollection)
-          .doc(id)
-          .set(newMessage.toMap());
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.messagesCollection)
+            .doc(id)
+            .set(newMessage.toMap()),
+      );
       return id;
     } catch (e) {
       return null;
@@ -383,10 +467,7 @@ class DatabaseService {
       await _firestore
           .collection(AppConstants.messagesCollection)
           .doc(messageId)
-          .update({
-        'isRead': true,
-        'readAt': Timestamp.now(),
-      });
+          .update({'isRead': true, 'readAt': Timestamp.now()});
       return true;
     } catch (e) {
       return false;
@@ -395,7 +476,7 @@ class DatabaseService {
 
   // ==================== AUDIT LOGS ====================
 
-  // Add audit log entry
+  // Add audit log entry (fire and forget, non-blocking)
   Future<void> addAuditLog({
     required String userId,
     required String action,
@@ -403,56 +484,51 @@ class DatabaseService {
     required String entityId,
     Map<String, dynamic>? metadata,
   }) async {
-    try {
-      final id = _uuid.v4();
-      await _firestore
-          .collection(AppConstants.auditLogsCollection)
-          .doc(id)
-          .set({
-        'id': id,
-        'userId': userId,
-        'action': action,
-        'entityType': entityType,
-        'entityId': entityId,
-        'timestamp': Timestamp.now(),
-        'metadata': metadata,
-      });
-    } catch (e) {
-      // Silently fail for audit logs
-    }
+    // Use unawaited to prevent blocking the main operation
+    // Errors are logged but don't affect the calling code
+    _firestore
+        .collection(AppConstants.auditLogsCollection)
+        .doc(_uuid.v4())
+        .set({
+          'id': _uuid.v4(),
+          'userId': userId,
+          'action': action,
+          'entityType': entityType,
+          'entityId': entityId,
+          'timestamp': Timestamp.now(),
+          'metadata': metadata,
+        })
+        .catchError((e) {
+          // Log silently - audit failures shouldn't break the app
+          return;
+        });
   }
+
   // ==================== TASKS ====================
 
-  // Get tasks for ward
+  // Get tasks for ward with server-side ordering
   Stream<List<TaskModel>> getTasksForWard(int wardNumber) {
     return _firestore
         .collection('tasks')
         .where('wardNumber', isEqualTo: wardNumber)
+        .orderBy('isCompleted')
+        .orderBy('dueDate')
         .snapshots()
         .map((snapshot) {
-          final tasks = snapshot.docs
+          return snapshot.docs
               .map((doc) => TaskModel.fromFirestore(doc))
               .toList();
-          // Sort: Incomplete first, then by date
-          tasks.sort((a, b) {
-            if (a.isCompleted != b.isCompleted) {
-              return a.isCompleted ? 1 : -1;
-            }
-            return a.dueDate.compareTo(b.dueDate);
-          });
-          return tasks;
         });
   }
 
-  // Add task
+  // Add task with retry
   Future<String?> addTask(TaskModel task) async {
     try {
       final id = _uuid.v4();
       final newTask = task.copyWith(id: id);
-      await _firestore
-          .collection('tasks')
-          .doc(id)
-          .set(newTask.toMap());
+      await _withRetry(
+        () => _firestore.collection('tasks').doc(id).set(newTask.toMap()),
+      );
       return id;
     } catch (e) {
       return null;
@@ -467,9 +543,7 @@ class DatabaseService {
     String? completedByNurseName,
   }) async {
     try {
-      final updates = <String, dynamic>{
-        'isCompleted': isCompleted,
-      };
+      final updates = <String, dynamic>{'isCompleted': isCompleted};
 
       if (isCompleted) {
         updates['completedByNurseId'] = completedByNurseId;
@@ -481,10 +555,9 @@ class DatabaseService {
         updates['completedAt'] = null;
       }
 
-      await _firestore
-          .collection('tasks')
-          .doc(taskId)
-          .update(updates);
+      await _withRetry(
+        () => _firestore.collection('tasks').doc(taskId).update(updates),
+      );
       return true;
     } catch (e) {
       return false;
@@ -494,10 +567,7 @@ class DatabaseService {
   // Delete task
   Future<bool> deleteTask(String taskId) async {
     try {
-      await _firestore
-          .collection('tasks')
-          .doc(taskId)
-          .delete();
+      await _firestore.collection('tasks').doc(taskId).delete();
       return true;
     } catch (e) {
       return false;

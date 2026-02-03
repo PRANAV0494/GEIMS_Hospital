@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
+import '../core/service_locator.dart';
 import '../models/message_model.dart';
 import '../services/database_service.dart';
 
 class MessageProvider extends ChangeNotifier {
-  final DatabaseService _databaseService = DatabaseService();
+  final DatabaseService _databaseService = getIt<DatabaseService>();
 
   List<MessageModel> _messages = [];
   bool _isLoading = false;

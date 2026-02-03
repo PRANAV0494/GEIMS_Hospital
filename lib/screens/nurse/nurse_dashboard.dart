@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/service_locator.dart';
 import '../../config/app_theme.dart';
 import '../../config/constants.dart';
 import '../../config/routes.dart';
 import '../../providers/auth_provider.dart';
-import '../../widgets/common/logo_widget.dart';
 import 'patient_details_tab.dart';
 import '../../widgets/patient_search_delegate.dart';
 import 'clinical_data_tab.dart';
@@ -21,42 +21,46 @@ class NurseDashboard extends StatefulWidget {
 }
 
 class _NurseDashboardState extends State<NurseDashboard> {
+  final DatabaseService _databaseService = getIt<DatabaseService>();
   int _currentIndex = 0;
   int _selectedWard = 1;
   int _selectedBed = 1;
-  int _refreshKey = 0; // Used to force rebuild of tabs
+
+  // Cache tab widgets to prevent unnecessary rebuilds
+  late List<Widget> _tabs;
 
   @override
   void initState() {
     super.initState();
+    _buildTabs();
   }
 
-  List<Widget> _buildTabs() {
-    return [
+  void _buildTabs() {
+    _tabs = [
       PatientDetailsTab(
-        key: ValueKey('patient_${_selectedWard}_${_selectedBed}_$_refreshKey'),
+        key: ValueKey('patient_${_selectedWard}_$_selectedBed'),
         wardNumber: _selectedWard,
         bedNumber: _selectedBed,
       ),
       ClinicalDataTab(
-        key: ValueKey('clinical_${_selectedWard}_${_selectedBed}_$_refreshKey'),
+        key: ValueKey('clinical_${_selectedWard}_$_selectedBed'),
         wardNumber: _selectedWard,
         bedNumber: _selectedBed,
       ),
       CommunicationHubTab(
-        key: ValueKey('comm_${_selectedWard}_${_selectedBed}_$_refreshKey'),
+        key: ValueKey('comm_${_selectedWard}_$_selectedBed'),
         wardNumber: _selectedWard,
         bedNumber: _selectedBed,
       ),
-      TasksTab(
-        wardNumber: _selectedWard,
-      ),
+      TasksTab(wardNumber: _selectedWard),
     ];
   }
 
-  void _refreshTabs() {
+  void _updateSelection(int ward, int bed) {
     setState(() {
-      _refreshKey++;
+      _selectedWard = ward;
+      _selectedBed = bed;
+      _buildTabs(); // Rebuild only when ward/bed actually changes
     });
   }
 
@@ -66,9 +70,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
       builder: (context) => AlertDialog(
         title: const Text('Logout'),
         content: const Text('Are you sure you want to logout?'),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -94,9 +96,15 @@ class _NurseDashboardState extends State<NurseDashboard> {
     }
   }
 
+  void _updateWardBed(int ward, int bed) {
+    setState(() {
+      _selectedWard = ward;
+      _selectedBed = bed;
+    });
+  }
+
   void _showWardBedSelector() {
-    final databaseService = DatabaseService();
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -104,11 +112,11 @@ class _NurseDashboardState extends State<NurseDashboard> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => FutureBuilder<Map<String, dynamic>?>(
-        future: databaseService.getHospitalConfig(),
+        future: _databaseService.getHospitalConfig(),
         builder: (context, configSnapshot) {
           final totalWards = configSnapshot.data?['totalWards'] ?? 10;
           final bedsPerWard = configSnapshot.data?['bedsPerWard'] ?? 20;
-          
+
           return StatefulBuilder(
             builder: (context, setModalState) {
               return Container(
@@ -122,7 +130,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                     const SizedBox(height: 24),
-                    
+
                     // Ward selector
                     Text(
                       'Ward Number',
@@ -234,7 +242,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                       child: ElevatedButton(
                         onPressed: () {
                           Navigator.of(context).pop();
-                          _refreshTabs();
+                          _updateSelection(_selectedWard, _selectedBed);
                         },
                         child: const Text(
                           'Confirm Selection',
@@ -272,10 +280,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Image.asset(
-                AppConstants.logoPath,
-                fit: BoxFit.contain,
-              ),
+              child: Image.asset(AppConstants.logoPath, fit: BoxFit.contain),
             ),
           ],
         ),
@@ -283,10 +288,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () {
-              showSearch(
-                context: context,
-                delegate: PatientSearchDelegate(),
-              );
+              showSearch(context: context, delegate: PatientSearchDelegate());
             },
             tooltip: 'Search Patient',
           ),
@@ -398,10 +400,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
           // Tab content
           Expanded(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: _buildTabs(),
-            ),
+            child: IndexedStack(index: _currentIndex, children: _tabs),
           ),
         ],
       ),
@@ -411,8 +410,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
           setState(() {
             _currentIndex = index;
           });
-          // Refresh tabs to pick up any new patient data
-          _refreshTabs();
+          // No need to rebuild tabs on navigation - streams handle updates
         },
         destinations: const [
           NavigationDestination(

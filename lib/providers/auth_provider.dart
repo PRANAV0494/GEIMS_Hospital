@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import '../core/service_locator.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../config/constants.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final AuthService _authService = AuthService();
+  final AuthService _authService = getIt<AuthService>();
 
   UserModel? _currentUser;
   bool _isLoading = false;

@@ -26,13 +26,13 @@ class PatientDetailsTab extends StatefulWidget {
 class _PatientDetailsTabState extends State<PatientDetailsTab> {
   final _formKey = GlobalKey<FormState>();
   final _databaseService = DatabaseService();
-  
+
   final _nameController = TextEditingController();
   final _ageController = TextEditingController();
   final _diagnosisController = TextEditingController();
   final _notesController = TextEditingController();
   final _allergyController = TextEditingController();
-  
+
   String _selectedGender = 'Male';
   DateTime _admissionDate = DateTime.now();
   UserModel? _selectedDoctor;
@@ -105,7 +105,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
       _admissionDate = patient.admissionDate;
       _allergies = List.from(patient.allergies);
       _isCritical = patient.isCritical;
-      
+
       // Find the selected doctor
       _selectedDoctor = _doctors.firstWhere(
         (d) => d.id == patient.attendingDoctorId,
@@ -131,9 +131,9 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
   Future<void> _savePatient() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedDoctor == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a doctor')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a doctor')));
       return;
     }
 
@@ -156,7 +156,9 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             ? null
             : _notesController.text.trim(),
         isCritical: _isCritical,
-        status: _isCritical ? AppConstants.statusCritical : AppConstants.statusStable,
+        status: _isCritical
+            ? AppConstants.statusCritical
+            : AppConstants.statusStable,
         createdAt: _existingPatient?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -175,10 +177,12 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             content: Text(
               success ? 'Patient saved successfully' : 'Failed to save patient',
             ),
-            backgroundColor: success ? AppTheme.successColor : AppTheme.errorColor,
+            backgroundColor: success
+                ? AppTheme.successColor
+                : AppTheme.errorColor,
           ),
         );
-        
+
         if (success) {
           _loadExistingPatient();
         }
@@ -257,10 +261,52 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
                 ),
               ),
 
+            // Patient Code Badge (for existing patients)
+            if (_existingPatient != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.badge_outlined, color: AppTheme.primaryColor),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Patient ID',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _existingPatient!.displayCode,
+                          style: TextStyle(
+                            color: AppTheme.primaryColor,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
             // Patient Name
             _buildSectionTitle('Patient Information'),
             const SizedBox(height: 12),
-            
+
             TextFormField(
               controller: _nameController,
               decoration: const InputDecoration(
@@ -323,7 +369,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             // Diagnosis
             _buildSectionTitle('Diagnosis'),
             const SizedBox(height: 12),
-            
+
             TextFormField(
               controller: _diagnosisController,
               maxLines: 3,
@@ -346,7 +392,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             _buildSectionTitle('Admission Details'),
             const SizedBox(height: 12),
 
-            // Admission Date  
+            // Admission Date
             GestureDetector(
               onTap: _selectAdmissionDate,
               child: Container(
@@ -409,7 +455,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             // Allergies
             _buildSectionTitle('Allergies'),
             const SizedBox(height: 12),
-            
+
             Row(
               children: [
                 Expanded(
@@ -441,7 +487,9 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
                   onDeleted: () {
                     setState(() => _allergies.remove(allergy));
                   },
-                  backgroundColor: AppTheme.warningOrange.withValues(alpha: 0.2),
+                  backgroundColor: AppTheme.warningOrange.withValues(
+                    alpha: 0.2,
+                  ),
                 );
               }).toList(),
             ),
@@ -451,7 +499,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             // Special Notes
             _buildSectionTitle('Special Notes'),
             const SizedBox(height: 12),
-            
+
             TextFormField(
               controller: _notesController,
               maxLines: 4,
@@ -473,14 +521,18 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
                     : Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: _isCritical ? AppTheme.criticalRed : AppTheme.dividerColor,
+                  color: _isCritical
+                      ? AppTheme.criticalRed
+                      : AppTheme.dividerColor,
                 ),
               ),
               child: Row(
                 children: [
                   Icon(
                     Icons.warning_amber,
-                    color: _isCritical ? AppTheme.criticalRed : AppTheme.textSecondary,
+                    color: _isCritical
+                        ? AppTheme.criticalRed
+                        : AppTheme.textSecondary,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -491,7 +543,9 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
                           'Critical Patient',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: _isCritical ? AppTheme.criticalRed : AppTheme.textPrimary,
+                            color: _isCritical
+                                ? AppTheme.criticalRed
+                                : AppTheme.textPrimary,
                           ),
                         ),
                         Text(
@@ -533,7 +587,9 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
                         ),
                       )
                     : Text(
-                        _existingPatient != null ? 'Update Patient' : 'Add Patient',
+                        _existingPatient != null
+                            ? 'Update Patient'
+                            : 'Add Patient',
                         style: const TextStyle(fontSize: 18),
                       ),
               ),
@@ -549,9 +605,9 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
-      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-        color: AppTheme.primaryColor,
-      ),
+      style: Theme.of(
+        context,
+      ).textTheme.titleLarge?.copyWith(color: AppTheme.primaryColor),
     );
   }
 
