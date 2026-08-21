@@ -29,11 +29,12 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // Any authenticated caller with a staff profile doc.
-    // exists() is cheaper than get() when we don't need fields.
+    // Any authenticated caller with an ACTIVE staff profile doc.
+    // Uses get() (not exists()) so deactivating staff revokes their access
+    // at the next rule evaluation - not just their next sign-in (NEW-7).
     function isStaff() {
       return isSignedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
     function isAdmin() {
@@ -100,9 +101,12 @@ service cloud.firestore {
       allow create: if isStaff()
         && request.resource.data.senderId == request.auth.uid;
 
-      // Messages are immutable except delivery/read receipts.
+      // Messages are immutable except delivery/read receipts. hasOnly()
+      // on the affected keys = "only these fields may change" (NEW-1:
+      // Set.subsetOf() does not exist in the rules language and broke
+      // deployment).
       allow update: if isStaff()
-        && changedKeys().subsetOf(['isDelivered', 'deliveredAt', 'isRead', 'readAt']);
+        && changedKeys().hasOnly(['isDelivered', 'deliveredAt', 'isRead', 'readAt']);
 
       allow delete: if isAdmin();
     }
@@ -115,14 +119,16 @@ service cloud.firestore {
     }
 
     // ---------- config ----------
-    match /config/{configId} {
+    // Scoped to the hospital layout doc explicitly: a wildcard /config/{id}
+    // would ALSO match patient_counter below, and overlapping matches grant
+    // access if ANY grants - letting an admin bypass the counter's monotonic
+    // guard and reissue duplicate GEIMS codes.
+    match /config/hospital {
       allow get, list: if isStaff();
-
-      // Hospital layout (config/hospital) is admin-controlled.
       allow write: if isAdmin();
     }
 
-    // The patient-code counter is written by any nurse during admission
+    // The patient-code counter is written by any staff during admission
     // (atomic transaction), but it must stay MONOTONIC so codes can never be
     // reused or reset, and only the counter field may change.
     match /config/patient_counter {

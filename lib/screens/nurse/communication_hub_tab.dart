@@ -99,6 +99,11 @@ class _CommunicationHubTabState extends State<CommunicationHubTab> {
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
+    // Double-tap guard: set BEFORE any await so a second tap inside the
+    // patient-resolution gap can't enqueue a duplicate message.
+    if (_isSending) return;
+
+    setState(() => _isSending = true);
 
     // Capture before any await (context across async gaps).
     final messenger = ScaffoldMessenger.of(context);
@@ -113,14 +118,13 @@ class _CommunicationHubTabState extends State<CommunicationHubTab> {
         .first;
     if (patient == null) {
       if (mounted) {
+        setState(() => _isSending = false);
         messenger.showSnackBar(
           const SnackBar(content: Text('No patient in this bed')),
         );
       }
       return;
     }
-
-    if (mounted) setState(() => _isSending = true);
 
     final message = MessageModel(
       id: '',
@@ -180,7 +184,10 @@ class _CommunicationHubTabState extends State<CommunicationHubTab> {
             ),
           );
         }
-        if (!patientSnapshot.hasData) {
+        // NEW-2: null emission = vacant bed, not an outage - gate the
+        // spinner on the connection state, not hasData.
+        if (patientSnapshot.connectionState == ConnectionState.waiting &&
+            !patientSnapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 

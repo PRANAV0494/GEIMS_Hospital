@@ -68,6 +68,10 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _navigateAfterInit() {
+    // A timeout already surfaced the retry prompt - don't let the (still
+    // pending) init result navigate away from it.
+    if (_needsRetry) return;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     // Navigate based on auth state

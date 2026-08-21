@@ -162,7 +162,13 @@ class AuthService {
   /// The client SDK cannot delete another user's Auth record, so "removing"
   /// staff deactivates them instead; their email stays reserved in Firebase
   /// Auth. Re-adding the same email lands here: find the existing profile by
-  /// email and bring it back with the newly supplied details.
+  /// email and bring it back.
+  ///
+  /// NEW-6: the password typed into the Add Staff dialog CANNOT be applied to
+  /// an existing account from the client, so we trigger a password-reset
+  /// email instead - otherwise "reactivated" would still leave the nurse
+  /// locked out behind their old (possibly forgotten) password. Returns null
+  /// if no deactivatable profile exists.
   Future<UserModel?> reactivateStaffByEmail(String email) async {
     final snapshot = await _firestore
         .collection(AppConstants.usersCollection)
@@ -177,6 +183,12 @@ class AuthService {
     if (existing.isActive) return null;
 
     await doc.reference.update({'isActive': true});
+
+    // Best-effort: a failed reset email doesn't undo the reactivation.
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    } catch (_) {}
+
     return existing.copyWith(isActive: true);
   }
 

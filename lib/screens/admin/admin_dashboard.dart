@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
 import '../../core/validators.dart';
+import '../../models/patient_model.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
@@ -116,6 +117,7 @@ class _OverviewTab extends StatefulWidget {
 class _OverviewTabState extends State<_OverviewTab> {
   late Stream<List<UserModel>> _doctorsStream;
   late Stream<List<UserModel>> _nursesStream;
+  late Stream<List<PatientModel>> _patientsStream;
 
   @override
   void initState() {
@@ -124,13 +126,14 @@ class _OverviewTabState extends State<_OverviewTab> {
     // adding/removing staff. Live streams keep them current.
     _doctorsStream = widget.databaseService.streamActiveStaff('doctor');
     _nursesStream = widget.databaseService.streamActiveStaff('nurse');
+    // Bug #28 residual: stream created ONCE, not inline in build().
+    _patientsStream = widget.databaseService.getAllPatients();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Single stream for all patient data - eliminates duplicate fetching
-    return StreamBuilder(
-      stream: widget.databaseService.getAllPatients(),
+    return StreamBuilder<List<PatientModel>>(
+      stream: _patientsStream,
       builder: (context, snapshot) {
         final patients = snapshot.data ?? [];
         final criticalPatients = patients
@@ -472,11 +475,15 @@ class _BedMapTabState extends State<_BedMapTab> {
   int _selectedWard = 1;
   int _totalWards = 5;
   int _bedsPerWard = 10;
+  late Stream<List<PatientModel>> _patientsStream;
 
   @override
   void initState() {
     super.initState();
     _loadConfig();
+    // Bug #28 residual: one stream per selected ward, recreated only when
+    // the ward changes - not on every rebuild.
+    _patientsStream = widget.databaseService.getPatientsForWard(_selectedWard);
   }
 
   Future<void> _loadConfig() async {
@@ -580,7 +587,11 @@ class _BedMapTabState extends State<_BedMapTab> {
                 }),
                 onChanged: (value) {
                   if (value != null) {
-                    setState(() => _selectedWard = value);
+                    setState(() {
+                      _selectedWard = value;
+                      _patientsStream = widget.databaseService
+                          .getPatientsForWard(value);
+                    });
                   }
                 },
               ),
@@ -628,8 +639,8 @@ class _BedMapTabState extends State<_BedMapTab> {
   }
 
   Widget _buildBedGrid() {
-    return StreamBuilder(
-      stream: widget.databaseService.getPatientsForWard(_selectedWard),
+    return StreamBuilder<List<PatientModel>>(
+      stream: _patientsStream,
       builder: (context, snapshot) {
         final patients = snapshot.data ?? [];
 
@@ -916,6 +927,9 @@ class _StaffListTabState extends State<_StaffListTab> {
 
     final dialogFuture = showDialog<bool>(
       context: context,
+      // Not dismissible by tapping outside: an account mid-creation shouldn't
+      // vanish without feedback.
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: Text('Add New ${widget.role == 'doctor' ? 'Doctor' : 'Nurse'}'),
         content: SingleChildScrollView(
@@ -1049,7 +1063,12 @@ class _StaffListTabState extends State<_StaffListTab> {
                     Navigator.pop(dialogContext, true);
                     rootMessenger.showSnackBar(
                       SnackBar(
-                        content: Text('${reactivated.name} reactivated'),
+                        content: Text(
+                          '${reactivated.name} reactivated. A password-reset '
+                          'email was sent to ${reactivated.email} - the '
+                          'password typed here does not apply to existing '
+                          'accounts.',
+                        ),
                         backgroundColor: AppTheme.stableGreen,
                       ),
                     );

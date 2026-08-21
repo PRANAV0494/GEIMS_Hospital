@@ -37,6 +37,30 @@ class _TasksTabState extends State<TasksTab> {
             return const Center(child: CircularProgressIndicator());
           }
 
+          // Bug #21 residual: a failed stream must not read as "No tasks
+          // yet" - that affirmatively tells a nurse nothing is due.
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.cloud_off, size: 60, color: AppTheme.criticalRed),
+                  const SizedBox(height: 16),
+                  const Text('Could not load tasks'),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return _buildEmptyState();
           }
@@ -472,8 +496,12 @@ class _TaskCard extends StatelessWidget {
                       DateFormat('MMM dd, HH:mm').format(task.dueDate),
                       isUrgent: isOverdue,
                     ),
+                    // completedAt is written with serverTimestamp() and can
+                    // read back null locally right after completion - guard
+                    // the non-null assertion.
                     if (task.isCompleted &&
-                        task.completedByNurseName != null) ...[
+                        task.completedByNurseName != null &&
+                        task.completedAt != null) ...[
                       const SizedBox(height: 8),
                       _buildDetailRow(
                         Icons.check_circle_outline,

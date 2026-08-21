@@ -3,15 +3,19 @@ rules_version = '2';
 // Voice notes contain PHI audio - staff-only access.
 service firebase.storage {
   match /b/{bucket}/o {
+    // NEW-5: auth != null alone lets any self-minted Auth account (the
+    // public API key makes signup scriptable) read/write PHI audio. Require
+    // an ACTIVE staff profile in Firestore, mirroring firestore.rules.
     function isStaff() {
-      return request.auth != null;
+      return request.auth != null
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.isActive == true;
     }
 
     match /voice_messages/{fileName} {
-      // Authenticated staff can read voice notes for care coordination.
+      // Active staff can read voice notes for care coordination.
       allow read: if isStaff();
 
-      // Uploads: staff only, audio only, capped at 10 MB.
+      // Uploads: active staff only, audio only, capped at 10 MB.
       allow write: if isStaff()
         && request.resource.size <= 10 * 1024 * 1024
         && request.resource.contentType.matches('audio/.*');

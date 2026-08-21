@@ -99,6 +99,12 @@ class _NurseDashboardState extends State<NurseDashboard> {
     // left the header showing one ward/bed while the tabs still charted
     // against the previous patient. Selection now lives in local temp state
     // and is committed only when the nurse confirms.
+    // Local, uncommitted selection - declared OUTSIDE the sheet builder so
+    // an async config load re-rendering the sheet can't reset taps the
+    // nurse already made.
+    int tempWard = _selectedWard;
+    int tempBed = _selectedBed;
+
     showModalBottomSheet<Map<String, int>>(
       context: context,
       isScrollControlled: true,
@@ -113,10 +119,6 @@ class _NurseDashboardState extends State<NurseDashboard> {
           final totalWards = (configSnapshot.data?['totalWards'] ?? 5) as int;
           final bedsPerWard =
               (configSnapshot.data?['bedsPerWard'] ?? 10) as int;
-
-          // Local, uncommitted selection.
-          int tempWard = _selectedWard;
-          int tempBed = _selectedBed;
 
           return StatefulBuilder(
             builder: (context, setModalState) {

@@ -197,9 +197,14 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             ? null
             : _notesController.text.trim(),
         isCritical: _isCritical,
+        // #6 residual: an edit must not silently clear a 'pending' status
+        // that abnormal vitals set - only the critical toggle or a fresh
+        // admission decides stable.
         status: _isCritical
             ? AppConstants.statusCritical
-            : AppConstants.statusStable,
+            : (_existingPatient?.status == AppConstants.statusPending
+                  ? AppConstants.statusPending
+                  : AppConstants.statusStable),
         assignedNurseId: _existingPatient?.assignedNurseId ?? currentUserId,
         createdAt: _existingPatient?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),

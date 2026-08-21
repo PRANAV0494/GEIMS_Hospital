@@ -53,7 +53,13 @@ class _ClinicalDataTabState extends State<ClinicalDataTab>
             'Could not load patient: ${patientSnapshot.error}',
           );
         }
-        if (!patientSnapshot.hasData) {
+        // NEW-2: a vacant bed emits null, and AsyncSnapshot.hasData is false
+        // for a null emission - gating on !hasData here turned "empty bed"
+        // into an infinite spinner indistinguishable from an outage. Gate on
+        // the connection state instead; data == null past this point means
+        // genuine vacancy.
+        if (patientSnapshot.connectionState == ConnectionState.waiting &&
+            !patientSnapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -180,11 +186,18 @@ class _ClinicalDataTabState extends State<ClinicalDataTab>
               child: TabBarView(
                 controller: _tabController,
                 children: [
+                  // NEW-3: keyed by patient id - if the live stream swaps the
+                  // patient under this tab (discharge + new admission from
+                  // another device), the sections rebuild fresh state instead
+                  // of charting a half-filled form into the NEW patient's
+                  // record.
                   _VitalsSection(
+                    key: ValueKey('vitals_${patient.id}'),
                     patient: patient,
                     databaseService: _databaseService,
                   ),
                   _MedicationsSection(
+                    key: ValueKey('meds_${patient.id}'),
                     patient: patient,
                     databaseService: _databaseService,
                   ),
@@ -236,7 +249,11 @@ class _VitalsSection extends StatefulWidget {
   final PatientModel patient;
   final DatabaseService databaseService;
 
-  const _VitalsSection({required this.patient, required this.databaseService});
+  const _VitalsSection({
+    super.key,
+    required this.patient,
+    required this.databaseService,
+  });
 
   @override
   State<_VitalsSection> createState() => _VitalsSectionState();
@@ -316,7 +333,12 @@ class _VitalsSectionState extends State<_VitalsSection> {
       glucoseLevel: glucose,
     );
 
-    final result = await widget.databaseService.addVitals(vitals);
+    // Live-streamed status keeps the critical-downgrade guard (#40) while
+    // the batch stays offline-queueable (NEW-4).
+    final result = await widget.databaseService.addVitals(
+      vitals,
+      currentPatientStatus: widget.patient.status,
+    );
 
     if (mounted) {
       setState(() => _isSaving = false);
@@ -1017,6 +1039,7 @@ class _MedicationsSection extends StatefulWidget {
   final DatabaseService databaseService;
 
   const _MedicationsSection({
+    super.key,
     required this.patient,
     required this.databaseService,
   });

@@ -378,16 +378,21 @@ class DatabaseService {
     }
   }
 
-  // Add vitals record (bugs #25 / #40).
+  // Add vitals record (bugs #25 / #40 / NEW-4).
   //
   // The vitals doc and the patient status update are committed as ONE atomic
-  // transaction. Previously the status write was a separate follow-up: if it
-  // failed, addVitals returned null ("Failed"), the nurse re-entered the
-  // values and the first (successful) vitals write produced a duplicate
-  // record. The transaction also fixes #40: an abnormal-but-not-critical
-  // reading sets status to 'pending', but a CRITICAL patient is never
-  // downgraded out of the critical count.
-  Future<String?> addVitals(VitalsModel vitals) async {
+  // batch. A batch (unlike a transaction) is queued by Firestore's offline
+  // persistence, so nurses can record vitals without connectivity - a plain
+  // transaction here silently dropped that capability.
+  //
+  // [currentPatientStatus] comes from the caller's live patient stream and
+  // preserves the #40 fix: abnormal-but-not-critical readings set status to
+  // 'pending', but a CRITICAL patient is never downgraded out of the
+  // critical count.
+  Future<String?> addVitals(
+    VitalsModel vitals, {
+    String? currentPatientStatus,
+  }) async {
     try {
       final id = _uuid.v4();
       final newVitals = VitalsModel(
@@ -407,29 +412,24 @@ class DatabaseService {
         alerts: vitals.calculateAlerts(),
       );
 
-      await _withRetry(
-        () => _firestore.runTransaction((transaction) async {
-          final vitalRef = _firestore
-              .collection(AppConstants.vitalsCollection)
-              .doc(id);
-          final patientRef = _firestore
-              .collection(AppConstants.patientsCollection)
-              .doc(vitals.patientId);
-
-          final patientSnap = await transaction.get(patientRef);
-
-          transaction.set(vitalRef, newVitals.toMap());
-
-          if (newVitals.hasAnyAlert && patientSnap.exists) {
-            final currentStatus = patientSnap.data()?['status'] as String?;
-            if (currentStatus != AppConstants.statusCritical) {
-              transaction.update(patientRef, {
-                'status': AppConstants.statusPending,
-              });
-            }
-          }
-        }),
+      final batch = _firestore.batch();
+      batch.set(
+        _firestore.collection(AppConstants.vitalsCollection).doc(id),
+        newVitals.toMap(),
       );
+
+      if (newVitals.hasAnyAlert &&
+          currentPatientStatus != null &&
+          currentPatientStatus != AppConstants.statusCritical) {
+        batch.update(
+          _firestore
+              .collection(AppConstants.patientsCollection)
+              .doc(vitals.patientId),
+          {'status': AppConstants.statusPending},
+        );
+      }
+
+      await batch.commit();
       return id;
     } catch (e) {
       return null;
