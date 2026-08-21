@@ -37,11 +37,16 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
   DateTime _admissionDate = DateTime.now();
   UserModel? _selectedDoctor;
   List<UserModel> _doctors = [];
+  String? _doctorsError;
   List<String> _allergies = [];
   bool _isCritical = false;
   bool _isLoading = false;
   bool _isSaving = false;
   PatientModel? _existingPatient;
+
+  // Guards against stale async completions when the nurse switches wards
+  // quickly - only the latest load may touch the form (bug #17 family).
+  int _loadEpoch = 0;
 
   @override
   void initState() {
@@ -61,18 +66,36 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
 
   Future<void> _loadDoctors() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final doctors = await authProvider.getAllDoctors();
-    setState(() {
-      _doctors = doctors;
-      if (_doctors.isNotEmpty && _selectedDoctor == null) {
-        _selectedDoctor = _doctors.first;
-      }
-    });
+    try {
+      final doctors = await authProvider.getAllDoctors();
+      if (!mounted) return;
+      setState(() {
+        _doctors = doctors;
+        _doctorsError = null;
+        // Drop a selected doctor that no longer exists in the active list.
+        if (_selectedDoctor != null &&
+            !doctors.any((d) => d.id == _selectedDoctor!.id)) {
+          _selectedDoctor = null;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      // Surface the failure instead of rendering an empty, silently
+      // admission-blocking dropdown (bugs #2/#8).
+      setState(
+        () => _doctorsError =
+            'Could not load doctors. Pull to retry via '
+            'leaving and reopening this tab, or check your connection.',
+      );
+    }
   }
 
   Future<void> _loadExistingPatient() async {
+    final epoch = ++_loadEpoch;
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
+    PatientModel? patient;
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection(AppConstants.patientsCollection)
@@ -82,15 +105,19 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
           .get();
 
       if (snapshot.docs.isNotEmpty) {
-        final patient = PatientModel.fromFirestore(snapshot.docs.first);
-        _populateForm(patient);
-      } else {
-        _clearForm();
+        patient = PatientModel.fromFirestore(snapshot.docs.first);
       }
     } catch (e) {
-      _clearForm();
+      patient = null;
     }
 
+    if (!mounted || epoch != _loadEpoch) return;
+
+    if (patient != null) {
+      _populateForm(patient);
+    } else {
+      _clearForm();
+    }
     setState(() => _isLoading = false);
   }
 
@@ -106,11 +133,18 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
       _allergies = List.from(patient.allergies);
       _isCritical = patient.isCritical;
 
-      // Find the selected doctor
-      _selectedDoctor = _doctors.firstWhere(
-        (d) => d.id == patient.attendingDoctorId,
-        orElse: () => _doctors.isNotEmpty ? _doctors.first : _selectedDoctor!,
-      );
+      // Find the selected doctor among ACTIVE doctors only. Falls back to
+      // null (shows hint) rather than silently reassigning the attending
+      // doctor to whoever happens to be first in the list (bug #8), and
+      // never dereferences a null _selectedDoctor.
+      UserModel? match;
+      for (final d in _doctors) {
+        if (d.id == patient.attendingDoctorId) {
+          match = d;
+          break;
+        }
+      }
+      _selectedDoctor = match;
     });
   }
 
@@ -140,6 +174,13 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
     setState(() => _isSaving = true);
 
     try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final currentUserId = authProvider.currentUser?.id;
+
+      // Bug #7: stamp the admitting nurse as the assigned nurse on CREATE so
+      // doctor->nurse messages have a real receiverId (unread badges, read
+      // receipts and mark-as-read all depend on it). On UPDATE the field is
+      // preserved server-side by DatabaseService.updatePatient.
       final patient = PatientModel(
         id: _existingPatient?.id ?? '',
         name: _nameController.text.trim(),
@@ -159,6 +200,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
         status: _isCritical
             ? AppConstants.statusCritical
             : AppConstants.statusStable,
+        assignedNurseId: _existingPatient?.assignedNurseId ?? currentUserId,
         createdAt: _existingPatient?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -184,7 +226,7 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
         );
 
         if (success) {
-          _loadExistingPatient();
+          await _loadExistingPatient();
         }
       }
     } catch (e) {
@@ -196,9 +238,11 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
-
-    setState(() => _isSaving = false);
   }
 
   void _addAllergy() {
@@ -433,8 +477,33 @@ class _PatientDetailsTabState extends State<PatientDetailsTab> {
             const SizedBox(height: 16),
 
             // Attending Doctor
+            if (_doctorsError != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.warningOrange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.warningOrange),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_off, color: AppTheme.warningOrange),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Could not load the doctor list. Admissions need an '
+                        'attending doctor - check your connection.',
+                        style: TextStyle(color: AppTheme.warningOrange),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             DropdownButtonFormField<UserModel>(
               initialValue: _selectedDoctor,
+              hint: const Text('Select attending doctor'),
               decoration: const InputDecoration(
                 labelText: 'Attending Doctor',
                 prefixIcon: Icon(Icons.local_hospital_outlined),

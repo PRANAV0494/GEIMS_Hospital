@@ -6,7 +6,24 @@ import '../models/vitals_model.dart';
 import '../models/medication_model.dart';
 import '../models/message_model.dart';
 import '../models/task_model.dart';
+import '../models/user_model.dart';
 import '../config/constants.dart';
+
+/// Outcome of a medication administration attempt.
+enum MedicationAdminResult {
+  /// This call administered the dose.
+  success,
+
+  /// The dose was already administered (e.g. by another device moments
+  /// earlier) - nothing was changed. Prevents double-dosing.
+  alreadyAdministered,
+
+  /// The write failed.
+  failed,
+}
+
+/// Outcome of a task completion attempt.
+enum TaskUpdateResult { success, alreadyCompleted, failed }
 
 class DatabaseService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -62,17 +79,42 @@ class DatabaseService {
     }
   }
 
-  // Delete user (for admin)
-  Future<bool> deleteUser(String userId) async {
+  /// Deactivate a staff member (bug #15).
+  ///
+  /// The client Auth SDK cannot delete another user's login, so deletion is
+  /// soft: the profile doc is flagged inactive, which removes them from all
+  /// staff rosters and blocks their next sign-in (see AuthService). Their
+  /// email stays reserved in Firebase Auth - re-adding it reactivates the
+  /// account instead (see AuthService.reactivateStaffByEmail).
+  Future<bool> deactivateUser(String userId) async {
     try {
-      await _firestore
-          .collection(AppConstants.usersCollection)
-          .doc(userId)
-          .delete();
+      await _withRetry(
+        () => _firestore
+            .collection(AppConstants.usersCollection)
+            .doc(userId)
+            .update({
+              'isActive': false,
+              'deactivatedAt': FieldValue.serverTimestamp(),
+            }),
+      );
       return true;
     } catch (e) {
       return false;
     }
+  }
+
+  // Live staff roster by role (admin dashboards stay current without
+  // manual refresh).
+  Stream<List<UserModel>> streamActiveStaff(String role) {
+    return _firestore
+        .collection(AppConstants.usersCollection)
+        .where('role', isEqualTo: role)
+        .where('isActive', isEqualTo: true)
+        .snapshots()
+        .map(
+          (snapshot) =>
+              snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList(),
+        );
   }
 
   // ==================== HOSPITAL CONFIG ====================
@@ -188,6 +230,23 @@ class DatabaseService {
         });
   }
 
+  // Live stream of the (at most one) patient occupying a ward/bed.
+  // Used by the nurse hub tabs so an admission into an empty bed appears
+  // immediately instead of requiring a ward re-pick (bug #18), and so a fast
+  // ward switch can't file data under a stale patient (bug #17).
+  Stream<PatientModel?> getPatientForBed(int wardNumber, int bedNumber) {
+    return _firestore
+        .collection(AppConstants.patientsCollection)
+        .where('wardNumber', isEqualTo: wardNumber)
+        .where('bedNumber', isEqualTo: bedNumber)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) return null;
+          return PatientModel.fromFirestore(snapshot.docs.first);
+        });
+  }
+
   // Get single patient
   Future<PatientModel?> getPatient(String patientId) async {
     try {
@@ -245,14 +304,37 @@ class DatabaseService {
     }
   }
 
-  // Update patient
+  // Update patient (bug #6).
+  //
+  // Writes ONLY the fields the edit form owns. The old code wrote the full
+  // model map, and because the form doesn't carry patientCode /
+  // assignedNurseId, those were overwritten with null on every edit - wiping
+  // the patient's GEIMS ID, nurse assignment and pending status.
+  // patientCode/id/createdAt/assignedNurseId are preserved server-side
+  // (and patientCode/id/createdAt are additionally locked by firestore.rules).
   Future<bool> updatePatient(PatientModel patient) async {
     try {
+      final updates = <String, dynamic>{
+        'name': patient.name,
+        'age': patient.age,
+        'gender': patient.gender,
+        'diagnosisSummary': patient.diagnosisSummary,
+        'wardNumber': patient.wardNumber,
+        'bedNumber': patient.bedNumber,
+        'admissionDate': Timestamp.fromDate(patient.admissionDate),
+        'attendingDoctorId': patient.attendingDoctorId,
+        'attendingDoctorName': patient.attendingDoctorName,
+        'allergies': patient.allergies,
+        'specialNotes': patient.specialNotes,
+        'isCritical': patient.isCritical,
+        'status': patient.status,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
       await _withRetry(
         () => _firestore
             .collection(AppConstants.patientsCollection)
             .doc(patient.id)
-            .update(patient.copyWith(updatedAt: DateTime.now()).toMap()),
+            .update(updates),
       );
       return true;
     } catch (e) {
@@ -296,7 +378,15 @@ class DatabaseService {
     }
   }
 
-  // Add vitals record with retry
+  // Add vitals record (bugs #25 / #40).
+  //
+  // The vitals doc and the patient status update are committed as ONE atomic
+  // transaction. Previously the status write was a separate follow-up: if it
+  // failed, addVitals returned null ("Failed"), the nurse re-entered the
+  // values and the first (successful) vitals write produced a duplicate
+  // record. The transaction also fixes #40: an abnormal-but-not-critical
+  // reading sets status to 'pending', but a CRITICAL patient is never
+  // downgraded out of the critical count.
   Future<String?> addVitals(VitalsModel vitals) async {
     try {
       final id = _uuid.v4();
@@ -316,21 +406,30 @@ class DatabaseService {
         notes: vitals.notes,
         alerts: vitals.calculateAlerts(),
       );
+
       await _withRetry(
-        () => _firestore
-            .collection(AppConstants.vitalsCollection)
-            .doc(id)
-            .set(newVitals.toMap()),
+        () => _firestore.runTransaction((transaction) async {
+          final vitalRef = _firestore
+              .collection(AppConstants.vitalsCollection)
+              .doc(id);
+          final patientRef = _firestore
+              .collection(AppConstants.patientsCollection)
+              .doc(vitals.patientId);
+
+          final patientSnap = await transaction.get(patientRef);
+
+          transaction.set(vitalRef, newVitals.toMap());
+
+          if (newVitals.hasAnyAlert && patientSnap.exists) {
+            final currentStatus = patientSnap.data()?['status'] as String?;
+            if (currentStatus != AppConstants.statusCritical) {
+              transaction.update(patientRef, {
+                'status': AppConstants.statusPending,
+              });
+            }
+          }
+        }),
       );
-
-      // Check for alerts and update patient status
-      if (newVitals.hasAnyAlert) {
-        await _firestore
-            .collection(AppConstants.patientsCollection)
-            .doc(vitals.patientId)
-            .update({'status': AppConstants.statusPending});
-      }
-
       return id;
     } catch (e) {
       return null;
@@ -389,44 +488,68 @@ class DatabaseService {
     }
   }
 
-  // Administer medication
-  Future<bool> administerMedication({
+  /// Administer medication (bug #12).
+  ///
+  /// Runs as a transaction with an "already administered?" precondition, so
+  /// two nurses tapping "Give" on different devices in the same sync window
+  /// can never double-dose a patient: the second write observes the first and
+  /// reports [MedicationAdminResult.alreadyAdministered] instead of blindly
+  /// overwriting the record.
+  Future<MedicationAdminResult> administerMedication({
     required String medicationId,
     required String nurseId,
     required String nurseName,
   }) async {
     try {
-      await _withRetry(
-        () => _firestore
+      final result = await _firestore.runTransaction<MedicationAdminResult>((
+        transaction,
+      ) async {
+        final ref = _firestore
             .collection(AppConstants.medicationsCollection)
-            .doc(medicationId)
-            .update({
-              'isAdministered': true,
-              'administeredTime': Timestamp.now(),
-              'administeredById': nurseId,
-              'administeredByName': nurseName,
-            }),
-      );
-      return true;
+            .doc(medicationId);
+        final snapshot = await transaction.get(ref);
+
+        if (!snapshot.exists) {
+          return MedicationAdminResult.failed;
+        }
+        if (snapshot.data()?['isAdministered'] == true) {
+          return MedicationAdminResult.alreadyAdministered;
+        }
+
+        transaction.update(ref, {
+          'isAdministered': true,
+          'administeredTime': FieldValue.serverTimestamp(),
+          'administeredById': nurseId,
+          'administeredByName': nurseName,
+        });
+        return MedicationAdminResult.success;
+      });
+      return result;
     } catch (e) {
-      return false;
+      return MedicationAdminResult.failed;
     }
   }
 
   // ==================== MESSAGES ====================
 
-  // Get messages for a patient conversation with server-side ordering and limit
+  // Get messages for a patient conversation (bug #3).
+  //
+  // Fetch the LATEST 50 (descending) and reverse for display. The old query
+  // ordered ascending with limit(50), which permanently pinned the window to
+  // the OLDEST 50 messages - message #51 ("start IV antibiotics now") was
+  // never rendered for either party once a conversation passed 50.
   Stream<List<MessageModel>> getMessagesForPatient(String patientId) {
     return _firestore
         .collection(AppConstants.messagesCollection)
         .where('patientId', isEqualTo: patientId)
-        .orderBy('sentAt')
+        .orderBy('sentAt', descending: true)
         .limit(50)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
+          final messages = snapshot.docs
               .map((doc) => MessageModel.fromFirestore(doc))
               .toList();
+          return messages.reversed.toList();
         });
   }
 
@@ -467,7 +590,7 @@ class DatabaseService {
       await _firestore
           .collection(AppConstants.messagesCollection)
           .doc(messageId)
-          .update({'isRead': true, 'readAt': Timestamp.now()});
+          .update({'isRead': true, 'readAt': FieldValue.serverTimestamp()});
       return true;
     } catch (e) {
       return false;
@@ -486,21 +609,24 @@ class DatabaseService {
   }) async {
     // Use unawaited to prevent blocking the main operation
     // Errors are logged but don't affect the calling code
+    final logId = _uuid.v4();
     _firestore
         .collection(AppConstants.auditLogsCollection)
-        .doc(_uuid.v4())
+        .doc(logId)
         .set({
-          'id': _uuid.v4(),
+          // The embedded id IS the doc id (previously two different UUIDs,
+          // making logs impossible to correlate - bug #33).
+          'id': logId,
           'userId': userId,
           'action': action,
           'entityType': entityType,
           'entityId': entityId,
-          'timestamp': Timestamp.now(),
+          'timestamp': FieldValue.serverTimestamp(),
           'metadata': metadata,
         })
         .catchError((e) {
           // Log silently - audit failures shouldn't break the app
-          return;
+          return null;
         });
   }
 
@@ -535,32 +661,49 @@ class DatabaseService {
     }
   }
 
-  // Update task status with completion details
-  Future<bool> updateTaskStatus({
+  /// Update task completion state (bug #12).
+  ///
+  /// Transactional with an isCompleted precondition, so two devices tapping
+  /// the checkbox simultaneously can't both claim completion.
+  Future<TaskUpdateResult> updateTaskStatus({
     required String taskId,
     required bool isCompleted,
     String? completedByNurseId,
     String? completedByNurseName,
   }) async {
     try {
-      final updates = <String, dynamic>{'isCompleted': isCompleted};
+      final result = await _firestore.runTransaction<TaskUpdateResult>((
+        transaction,
+      ) async {
+        final ref = _firestore.collection('tasks').doc(taskId);
+        final snapshot = await transaction.get(ref);
 
-      if (isCompleted) {
-        updates['completedByNurseId'] = completedByNurseId;
-        updates['completedByNurseName'] = completedByNurseName;
-        updates['completedAt'] = Timestamp.now();
-      } else {
-        updates['completedByNurseId'] = null;
-        updates['completedByNurseName'] = null;
-        updates['completedAt'] = null;
-      }
+        if (!snapshot.exists) {
+          return TaskUpdateResult.failed;
+        }
+        if (snapshot.data()?['isCompleted'] == isCompleted) {
+          return isCompleted
+              ? TaskUpdateResult.alreadyCompleted
+              : TaskUpdateResult.success;
+        }
 
-      await _withRetry(
-        () => _firestore.collection('tasks').doc(taskId).update(updates),
-      );
-      return true;
+        final updates = <String, dynamic>{'isCompleted': isCompleted};
+        if (isCompleted) {
+          updates['completedByNurseId'] = completedByNurseId;
+          updates['completedByNurseName'] = completedByNurseName;
+          updates['completedAt'] = FieldValue.serverTimestamp();
+        } else {
+          updates['completedByNurseId'] = null;
+          updates['completedByNurseName'] = null;
+          updates['completedAt'] = null;
+        }
+
+        transaction.update(ref, updates);
+        return TaskUpdateResult.success;
+      });
+      return result;
     } catch (e) {
-      return false;
+      return TaskUpdateResult.failed;
     }
   }
 

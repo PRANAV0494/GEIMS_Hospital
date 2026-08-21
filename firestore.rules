@@ -1,47 +1,149 @@
 rules_version = '2';
+
+// GEIMS Hospital - role-based Firestore rules.
+//
+// Model:
+//  - Every caller must be an authenticated Firebase user that has a profile
+//    document in /users (i.e. staff provisioned by an admin).
+//  - Admins are users with role == 'admin'.
+//  - Staff accounts are created ONLY via the admin dashboard. There is no
+//    self-signup path in the app, and these rules enforce it: /users docs can
+//    only be created by an admin.
+//
+// BOOTSTRAP: the first admin cannot be created through the app (chicken and
+// egg). Create it once in the Firebase Console:
+//  1. Authentication > Add user (email/password)
+//  2. Firestore > create document /users/{that uid} with:
+//     { role: 'admin', name: ..., email: ..., employeeId: ...,
+//       isActive: true, createdAt: <now>, lastLoginAt: <now> }
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users collection - users can read their own data
+
+    // ---------- helpers ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Any authenticated caller with a staff profile doc.
+    // exists() is cheaper than get() when we don't need fields.
+    function isStaff() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isSignedIn() && isStaff() && userDoc().role == 'admin';
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // ---------- users ----------
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // Staff rosters (doctor/nurse lists) are read by all staff; this is what
+      // makes the admission form's doctor dropdown work.
+      allow get, list: if isStaff();
+
+      // No self-registration: profiles are created by admins only.
+      allow create: if isAdmin()
+        && request.resource.data.role in ['doctor', 'nurse', 'admin'];
+
+      // Self-edits may touch profile fields only; role/isActive are
+      // admin-controlled so nobody can promote themselves.
+      allow update: if isAdmin()
+        || (isSignedIn() && request.auth.uid == userId
+            && !changedKeys().hasAny(['role', 'isActive']));
+
+      allow delete: if isAdmin();
     }
-    
-    // Patients collection - authenticated users can read/write
+
+    // ---------- patients ----------
     match /patients/{patientId} {
-      allow read, write: if request.auth != null;
+      allow get, list: if isStaff();
+      allow create: if isStaff();
+
+      // patientCode/id/createdAt are immutable after admission.
+      allow update: if isStaff()
+        && !changedKeys().hasAny(['patientCode', 'id', 'createdAt']);
+
+      allow delete: if isAdmin();
     }
-    
-    // Vitals collection - authenticated users can read/write
+
+    // ---------- vitals (append-only clinical record) ----------
     match /vitals/{vitalId} {
-      allow read, write: if request.auth != null;
+      allow get, list: if isStaff();
+      allow create: if isStaff();
+      // Entered vitals are never rewritten; corrections re-enter a new record.
+      allow update, delete: if false;
     }
-    
-    // Medications collection - authenticated users can read/write
+
+    // ---------- medications ----------
     match /medications/{medicationId} {
-      allow read, write: if request.auth != null;
+      allow get, list: if isStaff();
+      allow create: if isStaff();
+      // Administration updates the record; deletion is admin-only.
+      allow update: if isStaff();
+      allow delete: if isAdmin();
     }
-    
-    // Messages collection - authenticated users can read/write
+
+    // ---------- messages ----------
     match /messages/{messageId} {
-      allow read, write: if request.auth != null;
+      allow get, list: if isStaff();
+
+      // Senders can't forge someone else as the sender.
+      allow create: if isStaff()
+        && request.resource.data.senderId == request.auth.uid;
+
+      // Messages are immutable except delivery/read receipts.
+      allow update: if isStaff()
+        && changedKeys().subsetOf(['isDelivered', 'deliveredAt', 'isRead', 'readAt']);
+
+      allow delete: if isAdmin();
     }
-    
-    // Tasks collection - authenticated users can read/write
+
+    // ---------- tasks ----------
     match /tasks/{taskId} {
-      allow read, write: if request.auth != null;
+      allow get, list: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isStaff();
     }
-    
-    // Config collection - authenticated users can read, admin can write
+
+    // ---------- config ----------
     match /config/{configId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow get, list: if isStaff();
+
+      // Hospital layout (config/hospital) is admin-controlled.
+      allow write: if isAdmin();
     }
-    
-    // Audit logs - authenticated users can create
+
+    // The patient-code counter is written by any nurse during admission
+    // (atomic transaction), but it must stay MONOTONIC so codes can never be
+    // reused or reset, and only the counter field may change.
+    match /config/patient_counter {
+      allow get, list: if isStaff();
+      allow create: if isStaff()
+        && request.resource.data.keys().hasOnly(['counter'])
+        && request.resource.data.counter is int;
+      allow update: if isStaff()
+        && request.resource.data.keys().hasOnly(['counter'])
+        && request.resource.data.counter is int
+        && request.resource.data.counter > resource.data.counter;
+      allow delete: if false;
+    }
+
+    // ---------- audit logs ----------
     match /audit_logs/{logId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
+      // Append-only; writers stamp their own uid.
+      allow create: if isStaff()
+        && request.resource.data.userId == request.auth.uid;
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
     }
   }
 }

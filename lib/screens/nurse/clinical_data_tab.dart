@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
-import '../../config/constants.dart';
+import '../../core/validators.dart';
 import '../../models/patient_model.dart';
 import '../../models/vitals_model.dart';
 import '../../models/medication_model.dart';
@@ -30,187 +29,198 @@ class _ClinicalDataTabState extends State<ClinicalDataTab>
   late TabController _tabController;
   final _databaseService = DatabaseService();
 
-  PatientModel? _patient;
-  bool _isLoading = true;
-
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadPatient();
-  }
-
-  @override
-  void didUpdateWidget(ClinicalDataTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.wardNumber != widget.wardNumber ||
-        oldWidget.bedNumber != widget.bedNumber) {
-      _loadPatient();
-    }
-  }
-
-  Future<void> _loadPatient() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection(AppConstants.patientsCollection)
-          .where('wardNumber', isEqualTo: widget.wardNumber)
-          .where('bedNumber', isEqualTo: widget.bedNumber)
-          .limit(1)
-          .get();
-
-      if (snapshot.docs.isNotEmpty) {
-        _patient = PatientModel.fromFirestore(snapshot.docs.first);
-      } else {
-        _patient = null;
-      }
-    } catch (e) {
-      _patient = null;
-    }
-
-    setState(() => _isLoading = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    // Bug #18: this tab used a one-shot get(), so a patient admitted into an
+    // empty bed stayed invisible ("No patient in this bed") until the nurse
+    // re-picked the ward, and a doctor reassignment kept routing data to
+    // stale state. A live stream keeps the tab in sync with admissions and
+    // edits automatically.
+    return StreamBuilder<PatientModel?>(
+      stream: _databaseService.getPatientForBed(
+        widget.wardNumber,
+        widget.bedNumber,
+      ),
+      builder: (context, patientSnapshot) {
+        if (patientSnapshot.hasError) {
+          return _buildErrorView(
+            'Could not load patient: ${patientSnapshot.error}',
+          );
+        }
+        if (!patientSnapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-    if (_patient == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        final patient = patientSnapshot.data;
+
+        if (patient == null) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.person_off_outlined,
+                  size: 80,
+                  color: AppTheme.textSecondary.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No patient in this bed',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: AppTheme.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Add patient details first',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
           children: [
-            Icon(
-              Icons.person_off_outlined,
-              size: 80,
-              color: AppTheme.textSecondary.withValues(alpha: 0.5),
+            // Patient header
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [AppTheme.cardShadow],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: patient.isCritical
+                          ? AppTheme.criticalRed.withValues(alpha: 0.1)
+                          : AppTheme.primaryColor.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.person,
+                      color: patient.isCritical
+                          ? AppTheme.criticalRed
+                          : AppTheme.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          patient.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          '${patient.age} yrs • ${patient.gender}',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (patient.isCritical)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.criticalRed,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'CRITICAL',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'No patient in this bed',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(color: AppTheme.textSecondary),
+
+            // Tab bar
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                labelColor: Colors.white,
+                unselectedLabelColor: AppTheme.textSecondary,
+                tabs: const [
+                  Tab(text: 'Vitals'),
+                  Tab(text: 'Medications'),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Add patient details first',
-              style: Theme.of(context).textTheme.bodyMedium,
+
+            // Tab content
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _VitalsSection(
+                    patient: patient,
+                    databaseService: _databaseService,
+                  ),
+                  _MedicationsSection(
+                    patient: patient,
+                    databaseService: _databaseService,
+                  ),
+                ],
+              ),
             ),
           ],
-        ),
-      );
-    }
+        );
+      },
+    );
+  }
 
-    return Column(
-      children: [
-        // Patient header
-        Container(
-          padding: const EdgeInsets.all(16),
-          margin: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [AppTheme.cardShadow],
+  Widget _buildErrorView(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off, size: 60, color: AppTheme.criticalRed),
+          const SizedBox(height: 16),
+          Text(
+            'Something went wrong',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(color: AppTheme.criticalRed),
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _patient!.isCritical
-                      ? AppTheme.criticalRed.withValues(alpha: 0.1)
-                      : AppTheme.primaryColor.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.person,
-                  color: _patient!.isCritical
-                      ? AppTheme.criticalRed
-                      : AppTheme.primaryColor,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _patient!.name,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      '${_patient!.age} yrs • ${_patient!.gender}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              if (_patient!.isCritical)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.criticalRed,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'CRITICAL',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-
-        // Tab bar
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: TabBar(
-            controller: _tabController,
-            indicator: BoxDecoration(
-              color: AppTheme.primaryColor,
-              borderRadius: BorderRadius.circular(12),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppTheme.textSecondary),
             ),
-            labelColor: Colors.white,
-            unselectedLabelColor: AppTheme.textSecondary,
-            tabs: const [
-              Tab(text: 'Vitals'),
-              Tab(text: 'Medications'),
-            ],
           ),
-        ),
-
-        // Tab content
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            children: [
-              _VitalsSection(
-                patient: _patient!,
-                databaseService: _databaseService,
-              ),
-              _MedicationsSection(
-                patient: _patient!,
-                databaseService: _databaseService,
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -233,6 +243,7 @@ class _VitalsSection extends StatefulWidget {
 }
 
 class _VitalsSectionState extends State<_VitalsSection> {
+  final _formKey = GlobalKey<FormState>();
   final _heartRateController = TextEditingController();
   final _systolicController = TextEditingController();
   final _diastolicController = TextEditingController();
@@ -242,8 +253,26 @@ class _VitalsSectionState extends State<_VitalsSection> {
   final _glucoseController = TextEditingController();
   bool _isSaving = false;
 
+  // Bug #28: streams are created once per patient and cached, instead of
+  // being re-created inside build() on every keystroke/rebuild.
+  Stream<List<VitalsModel>>? _vitalsStream;
+  String? _streamPatientId;
+
+  Stream<List<VitalsModel>> _getVitalsStream(String patientId) {
+    if (_vitalsStream == null || _streamPatientId != patientId) {
+      _streamPatientId = patientId;
+      _vitalsStream = widget.databaseService.getVitalsForPatient(patientId);
+    }
+    return _vitalsStream!;
+  }
+
   Future<void> _saveVitals() async {
-    // Validate inputs
+    // Form-level validation catches malformed AND clinically implausible
+    // values via core/validators.dart (bug #23 - previously dead code).
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+
     final heartRate = int.tryParse(_heartRateController.text);
     final systolic = int.tryParse(_systolicController.text);
     final diastolic = int.tryParse(_diastolicController.text);
@@ -320,327 +349,351 @@ class _VitalsSectionState extends State<_VitalsSection> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Vitals Trend Chart
-          Text('Recent Trends', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-
-          StreamBuilder<List<VitalsModel>>(
-            stream: widget.databaseService.getVitalsForPatient(
-              widget.patient.id,
+    return Form(
+      key: _formKey,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Vitals Trend Chart
+            Text(
+              'Recent Trends',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return Container(
-                  height: 150,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'No vitals recorded yet',
-                      style: TextStyle(color: AppTheme.textSecondary),
+            const SizedBox(height: 12),
+
+            StreamBuilder<List<VitalsModel>>(
+              stream: _getVitalsStream(widget.patient.id),
+              builder: (context, snapshot) {
+                // Bug #21: backend/rules failures previously fell through to
+                // "No vitals recorded yet", affirmatively telling a nurse there
+                // was no data when the data simply failed to load.
+                if (snapshot.hasError) {
+                  return _buildStreamError('Could not load vitals');
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                );
-              }
-
-              final vitals = snapshot.data!.take(10).toList().reversed.toList();
-
-              return Container(
-                height: 180,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [AppTheme.cardShadow],
-                ),
-                child: LineChart(
-                  LineChartData(
-                    gridData: const FlGridData(show: false),
-                    titlesData: const FlTitlesData(show: false),
-                    borderData: FlBorderData(show: false),
-                    lineBarsData: [
-                      // Heart Rate line
-                      LineChartBarData(
-                        spots: vitals.asMap().entries.map((e) {
-                          return FlSpot(
-                            e.key.toDouble(),
-                            e.value.heartRate.toDouble(),
-                          );
-                        }).toList(),
-                        isCurved: true,
-                        color: AppTheme.criticalRed,
-                        barWidth: 2,
-                        dotData: const FlDotData(show: false),
-                      ),
-                      // Oxygen line
-                      LineChartBarData(
-                        spots: vitals.asMap().entries.map((e) {
-                          return FlSpot(
-                            e.key.toDouble(),
-                            e.value.oxygenSaturation,
-                          );
-                        }).toList(),
-                        isCurved: true,
-                        color: AppTheme.accentColor,
-                        barWidth: 2,
-                        dotData: const FlDotData(show: false),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _legendItem('Heart Rate', AppTheme.criticalRed),
-              const SizedBox(width: 24),
-              _legendItem('O₂ Saturation', AppTheme.accentColor),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // Vitals History List
-          Text(
-            'Vitals History',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 12),
-
-          StreamBuilder<List<VitalsModel>>(
-            stream: widget.databaseService.getVitalsForPatient(
-              widget.patient.id,
-            ),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'No vitals recorded yet',
-                      style: TextStyle(color: AppTheme.textSecondary),
-                    ),
-                  ),
-                );
-              }
-
-              final allVitals = snapshot.data!;
-              return Column(
-                children: allVitals.take(5).map((vital) {
-                  return GestureDetector(
-                    onTap: () => _showVitalDetailDialog(vital),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppTheme.dividerColor),
-                        boxShadow: [AppTheme.cardShadow],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                DateFormat(
-                                  'MMM dd, yyyy • HH:mm',
-                                ).format(vital.timestamp),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.primaryColor,
-                                ),
-                              ),
-                              Row(
-                                children: [
-                                  Text(
-                                    'by ${vital.recordedByName}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppTheme.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.touch_app,
-                                    size: 14,
-                                    color: AppTheme.textSecondary,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 16,
-                            runSpacing: 4,
-                            children: [
-                              _vitalChip(
-                                '❤️ ${vital.heartRate} bpm',
-                                vital.isHeartRateAbnormal
-                                    ? AppTheme.criticalRed
-                                    : null,
-                              ),
-                              _vitalChip(
-                                '💧 ${vital.oxygenSaturation.toStringAsFixed(0)}%',
-                                vital.isOxygenLow ? AppTheme.criticalRed : null,
-                              ),
-                              _vitalChip(
-                                '🌡️ ${vital.temperature.toStringAsFixed(1)}°C',
-                                vital.isTemperatureAbnormal
-                                    ? AppTheme.warningOrange
-                                    : null,
-                              ),
-                              _vitalChip(
-                                '🩸 ${vital.systolicBP}/${vital.diastolicBP}',
-                                vital.isBPAbnormal
-                                    ? AppTheme.warningOrange
-                                    : null,
-                              ),
-                              _vitalChip(
-                                '🫁 ${vital.respiratoryRate}/min',
-                                vital.isRespiratoryAbnormal
-                                    ? AppTheme.warningOrange
-                                    : null,
-                              ),
-                              _vitalChip(
-                                '🍬 ${vital.glucoseLevel.toStringAsFixed(0)} mg/dL',
-                                vital.isGlucoseAbnormal
-                                    ? AppTheme.warningOrange
-                                    : null,
-                              ),
-                            ],
-                          ),
-                        ],
+                    child: Center(
+                      child: Text(
+                        'No vitals recorded yet',
+                        style: TextStyle(color: AppTheme.textSecondary),
                       ),
                     ),
                   );
-                }).toList(),
-              );
-            },
-          ),
+                }
 
-          const SizedBox(height: 24),
+                final vitals = snapshot.data!
+                    .take(10)
+                    .toList()
+                    .reversed
+                    .toList();
 
-          // Add Vitals Form
-          Text(
-            'Record New Vitals',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 16),
-
-          // Heart Rate
-          _vitalInput(
-            controller: _heartRateController,
-            label: 'Heart Rate',
-            unit: 'bpm',
-            icon: Icons.favorite,
-            color: AppTheme.criticalRed,
-            hint: '60-100',
-          ),
-
-          Row(
-            children: [
-              Expanded(
-                child: _vitalInput(
-                  controller: _systolicController,
-                  label: 'Systolic BP',
-                  unit: 'mmHg',
-                  icon: Icons.arrow_upward,
-                  color: AppTheme.warningOrange,
-                  hint: '90-120',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _vitalInput(
-                  controller: _diastolicController,
-                  label: 'Diastolic BP',
-                  unit: 'mmHg',
-                  icon: Icons.arrow_downward,
-                  color: AppTheme.warningOrange,
-                  hint: '60-80',
-                ),
-              ),
-            ],
-          ),
-
-          _vitalInput(
-            controller: _oxygenController,
-            label: 'Oxygen Saturation',
-            unit: '%',
-            icon: Icons.air,
-            color: AppTheme.accentColor,
-            hint: '95-100',
-          ),
-
-          _vitalInput(
-            controller: _tempController,
-            label: 'Temperature',
-            unit: '°C',
-            icon: Icons.thermostat,
-            color: AppTheme.primaryColor,
-            hint: '36.1-37.2',
-          ),
-
-          _vitalInput(
-            controller: _respController,
-            label: 'Respiratory Rate',
-            unit: '/min',
-            icon: Icons.masks,
-            color: AppTheme.primaryLight,
-            hint: '12-20',
-          ),
-
-          _vitalInput(
-            controller: _glucoseController,
-            label: 'Glucose Level',
-            unit: 'mg/dL',
-            icon: Icons.water_drop,
-            color: Colors.purple,
-            hint: '70-140',
-          ),
-
-          const SizedBox(height: 24),
-
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton.icon(
-              onPressed: _isSaving ? null : _saveVitals,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Icon(Icons.save),
-              label: const Text('Record Vitals'),
+                return Container(
+                  height: 180,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [AppTheme.cardShadow],
+                  ),
+                  child: LineChart(
+                    LineChartData(
+                      gridData: const FlGridData(show: false),
+                      titlesData: const FlTitlesData(show: false),
+                      borderData: FlBorderData(show: false),
+                      lineBarsData: [
+                        // Heart Rate line
+                        LineChartBarData(
+                          spots: vitals.asMap().entries.map((e) {
+                            return FlSpot(
+                              e.key.toDouble(),
+                              e.value.heartRate.toDouble(),
+                            );
+                          }).toList(),
+                          isCurved: true,
+                          color: AppTheme.criticalRed,
+                          barWidth: 2,
+                          dotData: const FlDotData(show: false),
+                        ),
+                        // Oxygen line
+                        LineChartBarData(
+                          spots: vitals.asMap().entries.map((e) {
+                            return FlSpot(
+                              e.key.toDouble(),
+                              e.value.oxygenSaturation,
+                            );
+                          }).toList(),
+                          isCurved: true,
+                          color: AppTheme.accentColor,
+                          barWidth: 2,
+                          dotData: const FlDotData(show: false),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-          ),
 
-          const SizedBox(height: 32),
-        ],
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _legendItem('Heart Rate', AppTheme.criticalRed),
+                const SizedBox(width: 24),
+                _legendItem('O₂ Saturation', AppTheme.accentColor),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Vitals History List
+            Text(
+              'Vitals History',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+
+            StreamBuilder<List<VitalsModel>>(
+              stream: _getVitalsStream(widget.patient.id),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return _buildStreamError('Could not load vitals history');
+                }
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'No vitals recorded yet',
+                        style: TextStyle(color: AppTheme.textSecondary),
+                      ),
+                    ),
+                  );
+                }
+
+                final allVitals = snapshot.data!;
+                return Column(
+                  children: allVitals.take(5).map((vital) {
+                    return GestureDetector(
+                      onTap: () => _showVitalDetailDialog(vital),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.dividerColor),
+                          boxShadow: [AppTheme.cardShadow],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  DateFormat(
+                                    'MMM dd, yyyy • HH:mm',
+                                  ).format(vital.timestamp),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.primaryColor,
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'by ${vital.recordedByName}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Icon(
+                                      Icons.touch_app,
+                                      size: 14,
+                                      color: AppTheme.textSecondary,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 16,
+                              runSpacing: 4,
+                              children: [
+                                _vitalChip(
+                                  '❤️ ${vital.heartRate} bpm',
+                                  vital.isHeartRateAbnormal
+                                      ? AppTheme.criticalRed
+                                      : null,
+                                ),
+                                _vitalChip(
+                                  '💧 ${vital.oxygenSaturation.toStringAsFixed(0)}%',
+                                  vital.isOxygenLow
+                                      ? AppTheme.criticalRed
+                                      : null,
+                                ),
+                                _vitalChip(
+                                  '🌡️ ${vital.temperature.toStringAsFixed(1)}°C',
+                                  vital.isTemperatureAbnormal
+                                      ? AppTheme.warningOrange
+                                      : null,
+                                ),
+                                _vitalChip(
+                                  '🩸 ${vital.systolicBP}/${vital.diastolicBP}',
+                                  vital.isBPAbnormal
+                                      ? AppTheme.warningOrange
+                                      : null,
+                                ),
+                                _vitalChip(
+                                  '🫁 ${vital.respiratoryRate}/min',
+                                  vital.isRespiratoryAbnormal
+                                      ? AppTheme.warningOrange
+                                      : null,
+                                ),
+                                _vitalChip(
+                                  '🍬 ${vital.glucoseLevel.toStringAsFixed(0)} mg/dL',
+                                  vital.isGlucoseAbnormal
+                                      ? AppTheme.warningOrange
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+
+            const SizedBox(height: 24),
+
+            // Add Vitals Form
+            Text(
+              'Record New Vitals',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 16),
+
+            // Heart Rate
+            _vitalInput(
+              controller: _heartRateController,
+              label: 'Heart Rate',
+              unit: 'bpm',
+              icon: Icons.favorite,
+              color: AppTheme.criticalRed,
+              hint: '60-100',
+              validator: Validators.heartRate,
+            ),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _vitalInput(
+                    controller: _systolicController,
+                    label: 'Systolic BP',
+                    unit: 'mmHg',
+                    icon: Icons.arrow_upward,
+                    color: AppTheme.warningOrange,
+                    hint: '90-120',
+                    validator: Validators.bloodPressureSystolic,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _vitalInput(
+                    controller: _diastolicController,
+                    label: 'Diastolic BP',
+                    unit: 'mmHg',
+                    icon: Icons.arrow_downward,
+                    color: AppTheme.warningOrange,
+                    hint: '60-80',
+                    validator: Validators.bloodPressureDiastolic,
+                  ),
+                ),
+              ],
+            ),
+
+            _vitalInput(
+              controller: _oxygenController,
+              label: 'Oxygen Saturation',
+              unit: '%',
+              icon: Icons.air,
+              color: AppTheme.accentColor,
+              hint: '95-100',
+              validator: Validators.oxygenSaturation,
+            ),
+
+            _vitalInput(
+              controller: _tempController,
+              label: 'Temperature',
+              unit: '°C',
+              icon: Icons.thermostat,
+              color: AppTheme.primaryColor,
+              hint: '36.1-37.2',
+              validator: Validators.temperature,
+            ),
+
+            _vitalInput(
+              controller: _respController,
+              label: 'Respiratory Rate',
+              unit: '/min',
+              icon: Icons.masks,
+              color: AppTheme.primaryLight,
+              hint: '12-20',
+              validator: Validators.respiratoryRate,
+            ),
+
+            _vitalInput(
+              controller: _glucoseController,
+              label: 'Glucose Level',
+              unit: 'mg/dL',
+              icon: Icons.water_drop,
+              color: Colors.purple,
+              hint: '70-140',
+              validator: Validators.glucoseLevel,
+            ),
+
+            const SizedBox(height: 24),
+
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton.icon(
+                onPressed: _isSaving ? null : _saveVitals,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.save),
+                label: const Text('Record Vitals'),
+              ),
+            ),
+
+            const SizedBox(height: 32),
+          ],
+        ),
       ),
     );
   }
@@ -652,18 +705,39 @@ class _VitalsSectionState extends State<_VitalsSection> {
     required IconData icon,
     required Color color,
     required String hint,
+    String? Function(String?)? validator,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: controller,
         keyboardType: TextInputType.number,
+        validator: validator,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           suffixText: unit,
           prefixIcon: Icon(icon, color: color),
         ),
+      ),
+    );
+  }
+
+  /// Error placeholder for failed streams (bug #21).
+  Widget _buildStreamError(String message) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.criticalRed.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.criticalRed.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off, color: AppTheme.criticalRed, size: 20),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ],
       ),
     );
   }
@@ -952,21 +1026,62 @@ class _MedicationsSection extends StatefulWidget {
 }
 
 class _MedicationsSectionState extends State<_MedicationsSection> {
+  // Bug #28: one shared stream per patient instead of a new subscription on
+  // every rebuild.
+  Stream<List<MedicationModel>>? _medsStream;
+  String? _streamPatientId;
+
+  Stream<List<MedicationModel>> _getMedsStream(String patientId) {
+    if (_medsStream == null || _streamPatientId != patientId) {
+      _streamPatientId = patientId;
+      _medsStream = widget.databaseService.getMedicationsForPatient(patientId);
+    }
+    return _medsStream!;
+  }
+
+  static int _doseCountFor(String frequency) {
+    switch (frequency) {
+      case 'bid':
+        return 2;
+      case 'tid':
+        return 3;
+      case 'qid':
+        return 4;
+      default:
+        return 1; // once / prn
+    }
+  }
+
   void _showAddMedicationDialog() {
     final nameController = TextEditingController();
     final dosageController = TextEditingController();
     String selectedRoute = 'oral';
     String selectedFrequency = 'once';
     bool isInjection = false;
-    DateTime scheduledTime = DateTime.now().add(const Duration(hours: 1));
 
-    showModalBottomSheet(
+    // Bug #9: "Twice Daily" previously created exactly ONE dose hardcoded to
+    // now + 1h with no way to change it, and after a single "Give" the whole
+    // prescription showed permanently administered. The schedule below
+    // creates one record PER DOSE, each independently administrable.
+    const defaultsByIndex = [
+      TimeOfDay(hour: 8, minute: 0),
+      TimeOfDay(hour: 14, minute: 0),
+      TimeOfDay(hour: 20, minute: 0),
+      TimeOfDay(hour: 2, minute: 0),
+    ];
+    List<TimeOfDay> doseTimes() => List.generate(
+      _doseCountFor(selectedFrequency),
+      (i) => defaultsByIndex[i],
+    );
+    var times = doseTimes();
+
+    final sheetFuture = showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => StatefulBuilder(
+      builder: (dialogContext) => StatefulBuilder(
         builder: (context, setModalState) {
           return Padding(
             padding: EdgeInsets.only(
@@ -1053,9 +1168,39 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                       DropdownMenuItem(value: 'prn', child: Text('As Needed')),
                     ],
                     onChanged: (value) {
-                      setModalState(() => selectedFrequency = value!);
+                      setModalState(() {
+                        selectedFrequency = value!;
+                        times = doseTimes();
+                      });
                     },
                   ),
+
+                  // One editable time per daily dose.
+                  ...List.generate(times.length, (index) {
+                    final t = times[index];
+                    final label = index == 0 && selectedFrequency == 'prn'
+                        ? 'Give at'
+                        : 'Dose ${index + 1}';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      leading: Text(label),
+                      trailing: TextButton.icon(
+                        onPressed: () async {
+                          final picked = await showTimePicker(
+                            context: context,
+                            initialTime: t,
+                          );
+                          if (picked != null) {
+                            setModalState(() => times[index] = picked);
+                          }
+                        },
+                        icon: const Icon(Icons.access_time, size: 18),
+                        label: Text(t.format(context)),
+                      ),
+                    );
+                  }),
+
                   const SizedBox(height: 24),
 
                   SizedBox(
@@ -1063,28 +1208,83 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                     height: 56,
                     child: ElevatedButton(
                       onPressed: () async {
-                        if (nameController.text.isEmpty ||
-                            dosageController.text.isEmpty) {
+                        if (nameController.text.trim().isEmpty ||
+                            dosageController.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Please enter medication name and dosage',
+                              ),
+                            ),
+                          );
                           return;
                         }
 
-                        // authProvider not needed - removed unused variable
-                        final medication = MedicationModel(
-                          id: '',
-                          patientId: widget.patient.id,
-                          name: nameController.text.trim(),
-                          dosage: dosageController.text.trim(),
-                          route: selectedRoute,
-                          frequency: selectedFrequency,
-                          scheduledTime: scheduledTime,
-                          isInjection: isInjection,
-                          prescribedById: widget.patient.attendingDoctorId,
-                          prescribedByName: widget.patient.attendingDoctorName,
-                          createdAt: DateTime.now(),
+                        // Bug #10: nurse-entered meds were attributed to the
+                        // attending doctor (audit-trail falsification). The
+                        // prescriber of record here is the staff member who
+                        // actually entered the order.
+                        final authProvider = Provider.of<AuthProvider>(
+                          dialogContext,
+                          listen: false,
+                        );
+                        final user = authProvider.currentUser;
+
+                        DateTime nextOccurrence(TimeOfDay t) {
+                          final now = DateTime.now();
+                          var dt = DateTime(
+                            now.year,
+                            now.month,
+                            now.day,
+                            t.hour,
+                            t.minute,
+                          );
+                          if (!dt.isAfter(now)) {
+                            dt = dt.add(const Duration(days: 1));
+                          }
+                          return dt;
+                        }
+
+                        // Capture before awaits (context across async gaps).
+                        final sectionMessenger = ScaffoldMessenger.of(
+                          this.context,
                         );
 
-                        await widget.databaseService.addMedication(medication);
-                        if (context.mounted) Navigator.of(context).pop();
+                        var allSucceeded = true;
+                        for (final t in times) {
+                          final medication = MedicationModel(
+                            id: '',
+                            patientId: widget.patient.id,
+                            name: nameController.text.trim(),
+                            dosage: dosageController.text.trim(),
+                            route: selectedRoute,
+                            frequency: selectedFrequency,
+                            scheduledTime: nextOccurrence(t),
+                            isInjection: isInjection,
+                            prescribedById: user?.id ?? '',
+                            prescribedByName: user?.name ?? 'Unknown',
+                            createdAt: DateTime.now(),
+                          );
+                          final ok = await widget.databaseService.addMedication(
+                            medication,
+                          );
+                          if (ok == null) allSucceeded = false;
+                        }
+
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                        }
+                        if (!allSucceeded) {
+                          sectionMessenger.showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Some doses could not be saved. Please '
+                                'verify the medication list.',
+                              ),
+                              backgroundColor: AppTheme.errorColor,
+                            ),
+                          );
+                        }
                       },
                       child: const Text('Add Medication'),
                     ),
@@ -1096,6 +1296,12 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
         },
       ),
     );
+
+    // Dispose the dialog's controllers when the sheet closes.
+    sheetFuture.whenComplete(() {
+      nameController.dispose();
+      dosageController.dispose();
+    });
   }
 
   @override
@@ -1118,10 +1324,34 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
         // Medications list
         Expanded(
           child: StreamBuilder<List<MedicationModel>>(
-            stream: widget.databaseService.getMedicationsForPatient(
-              widget.patient.id,
-            ),
+            stream: _getMedsStream(widget.patient.id),
             builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                // Bug #21: errors must not read as "No medications scheduled".
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.cloud_off,
+                        size: 60,
+                        color: AppTheme.criticalRed,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('Could not load medications'),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${snapshot.error}',
+                        style: TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                );
+              }
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Center(
                   child: Column(
@@ -1151,15 +1381,53 @@ class _MedicationsSectionState extends State<_MedicationsSection> {
                   return _MedicationCard(
                     medication: med,
                     onAdminister: () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       final authProvider = Provider.of<AuthProvider>(
                         context,
                         listen: false,
                       );
-                      await widget.databaseService.administerMedication(
-                        medicationId: med.id,
-                        nurseId: authProvider.currentUser?.id ?? '',
-                        nurseName: authProvider.currentUser?.name ?? 'Unknown',
-                      );
+
+                      // Bug #12: blind update() let two devices both mark a
+                      // dose given (patient double-dosed, record shows one).
+                      // The service call is now transactional.
+                      final result = await widget.databaseService
+                          .administerMedication(
+                            medicationId: med.id,
+                            nurseId: authProvider.currentUser?.id ?? '',
+                            nurseName:
+                                authProvider.currentUser?.name ?? 'Unknown',
+                          );
+
+                      if (!mounted) return;
+                      switch (result) {
+                        case MedicationAdminResult.success:
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text('${med.name} marked as given'),
+                              backgroundColor: AppTheme.successColor,
+                            ),
+                          );
+                        case MedicationAdminResult.alreadyAdministered:
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                '${med.name} was already administered by '
+                                'another device - no double dose recorded.',
+                              ),
+                              backgroundColor: AppTheme.warningOrange,
+                            ),
+                          );
+                        case MedicationAdminResult.failed:
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Failed to record administration of '
+                                '${med.name}',
+                              ),
+                              backgroundColor: AppTheme.errorColor,
+                            ),
+                          );
+                      }
                     },
                   );
                 },

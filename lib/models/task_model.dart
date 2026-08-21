@@ -12,7 +12,7 @@ class TaskModel {
   final String assignedNurseName; // Name of creator
   final int wardNumber;
   final DateTime createdAt;
-  
+
   // Completion details
   final String? completedByNurseId;
   final String? completedByNurseName;
@@ -49,27 +49,44 @@ class TaskModel {
       'createdAt': Timestamp.fromDate(createdAt),
       'completedByNurseId': completedByNurseId,
       'completedByNurseName': completedByNurseName,
-      'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
+      'completedAt': completedAt != null
+          ? Timestamp.fromDate(completedAt!)
+          : null,
     };
   }
 
   factory TaskModel.fromMap(Map<String, dynamic> map, String id) {
+    // Bug #22: these were hard casts (`as Timestamp`), so ONE malformed doc
+    // threw during list mapping and permanently bricked the whole ward's
+    // task stream. Parse defensively instead - a bad field degrades that one
+    // card, never the list.
     return TaskModel(
       id: id,
-      title: map['title'] ?? '',
-      description: map['description'] ?? '',
-      isCompleted: map['isCompleted'] ?? false,
-      dueDate: (map['dueDate'] as Timestamp).toDate(),
-      patientId: map['patientId'] ?? '',
-      patientName: map['patientName'] ?? '',
-      assignedNurseId: map['assignedNurseId'] ?? '',
-      assignedNurseName: map['assignedNurseName'] ?? 'Unknown',
-      wardNumber: map['wardNumber'] ?? 1,
-      createdAt: (map['createdAt'] as Timestamp).toDate(),
-      completedByNurseId: map['completedByNurseId'],
-      completedByNurseName: map['completedByNurseName'],
-      completedAt: (map['completedAt'] as Timestamp?)?.toDate(),
+      title: map['title']?.toString() ?? '',
+      description: map['description']?.toString() ?? '',
+      isCompleted: map['isCompleted'] == true,
+      dueDate: _parseTimestamp(map['dueDate']) ?? DateTime.now(),
+      patientId: map['patientId']?.toString() ?? '',
+      patientName: map['patientName']?.toString() ?? '',
+      assignedNurseId: map['assignedNurseId']?.toString() ?? '',
+      assignedNurseName: map['assignedNurseName']?.toString() ?? 'Unknown',
+      wardNumber: (map['wardNumber'] as num?)?.toInt() ?? 1,
+      createdAt: _parseTimestamp(map['createdAt']) ?? DateTime.now(),
+      completedByNurseId: map['completedByNurseId']?.toString(),
+      completedByNurseName: map['completedByNurseName']?.toString(),
+      completedAt: _parseTimestamp(map['completedAt']),
     );
+  }
+
+  /// Tolerant timestamp parser: accepts Timestamp and ISO-8601 strings,
+  /// returns null for anything else instead of throwing.
+  static DateTime? _parseTimestamp(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    return null;
   }
 
   factory TaskModel.fromFirestore(DocumentSnapshot doc) {

@@ -26,31 +26,26 @@ class _NurseDashboardState extends State<NurseDashboard> {
   int _selectedWard = 1;
   int _selectedBed = 1;
 
-  // Cache tab widgets to prevent unnecessary rebuilds
-  late List<Widget> _tabs;
-
-  @override
-  void initState() {
-    super.initState();
-    _buildTabs();
-  }
-
-  void _buildTabs() {
-    _tabs = [
+  List<Widget> _buildTabs() {
+    return [
       PatientDetailsTab(
-        key: ValueKey('patient_${_selectedWard}_$_selectedBed'),
+        key: ValueKey('patient_$_selectedWard,$_selectedBed'),
         wardNumber: _selectedWard,
         bedNumber: _selectedBed,
       ),
       ClinicalDataTab(
-        key: ValueKey('clinical_${_selectedWard}_$_selectedBed'),
+        key: ValueKey('clinical_$_selectedWard,$_selectedBed'),
         wardNumber: _selectedWard,
         bedNumber: _selectedBed,
       ),
+      // Only treat messages as "seen" while this tab is actually visible -
+      // IndexedStack keeps hidden tabs alive, and they must not mark messages
+      // read that the nurse never looked at (bug #20).
       CommunicationHubTab(
-        key: ValueKey('comm_${_selectedWard}_$_selectedBed'),
+        key: ValueKey('comm_$_selectedWard,$_selectedBed'),
         wardNumber: _selectedWard,
         bedNumber: _selectedBed,
+        isActive: _currentIndex == 2,
       ),
       TasksTab(wardNumber: _selectedWard),
     ];
@@ -99,18 +94,29 @@ class _NurseDashboardState extends State<NurseDashboard> {
   // Removed unused method _updateWardBed - not referenced anywhere
 
   void _showWardBedSelector() {
-
-    showModalBottomSheet(
+    // Bug #4: the sheet previously mutated the dashboard's _selectedWard/
+    // _selectedBed directly as the nurse tapped around, so swipe-dismissing
+    // left the header showing one ward/bed while the tabs still charted
+    // against the previous patient. Selection now lives in local temp state
+    // and is committed only when the nurse confirms.
+    showModalBottomSheet<Map<String, int>>(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) => FutureBuilder<Map<String, dynamic>?>(
+      builder: (sheetContext) => FutureBuilder<Map<String, dynamic>?>(
         future: _databaseService.getHospitalConfig(),
         builder: (context, configSnapshot) {
-          final totalWards = configSnapshot.data?['totalWards'] ?? 10;
-          final bedsPerWard = configSnapshot.data?['bedsPerWard'] ?? 20;
+          // Fallbacks must match DatabaseService defaults (5 wards x 10 beds)
+          // so a config-load failure can't render phantom wards (bug #37).
+          final totalWards = (configSnapshot.data?['totalWards'] ?? 5) as int;
+          final bedsPerWard =
+              (configSnapshot.data?['bedsPerWard'] ?? 10) as int;
+
+          // Local, uncommitted selection.
+          int tempWard = _selectedWard;
+          int tempBed = _selectedBed;
 
           return StatefulBuilder(
             builder: (context, setModalState) {
@@ -137,11 +143,11 @@ class _NurseDashboardState extends State<NurseDashboard> {
                       runSpacing: 12,
                       children: List.generate(totalWards, (index) {
                         final ward = index + 1;
-                        final isSelected = _selectedWard == ward;
+                        final isSelected = tempWard == ward;
                         return GestureDetector(
                           onTap: () {
                             setModalState(() {
-                              _selectedWard = ward;
+                              tempWard = ward;
                             });
                           },
                           child: Container(
@@ -189,11 +195,11 @@ class _NurseDashboardState extends State<NurseDashboard> {
                       runSpacing: 12,
                       children: List.generate(bedsPerWard, (index) {
                         final bed = index + 1;
-                        final isSelected = _selectedBed == bed;
+                        final isSelected = tempBed == bed;
                         return GestureDetector(
                           onTap: () {
                             setModalState(() {
-                              _selectedBed = bed;
+                              tempBed = bed;
                             });
                           },
                           child: Container(
@@ -236,8 +242,9 @@ class _NurseDashboardState extends State<NurseDashboard> {
                       height: 56,
                       child: ElevatedButton(
                         onPressed: () {
-                          Navigator.of(context).pop();
-                          _updateSelection(_selectedWard, _selectedBed);
+                          Navigator.of(
+                            sheetContext,
+                          ).pop({'ward': tempWard, 'bed': tempBed});
                         },
                         child: const Text(
                           'Confirm Selection',
@@ -254,7 +261,10 @@ class _NurseDashboardState extends State<NurseDashboard> {
           );
         },
       ),
-    );
+    ).then((result) {
+      if (!mounted || result == null) return;
+      _updateSelection(result['ward']!, result['bed']!);
+    });
   }
 
   @override
@@ -283,7 +293,19 @@ class _NurseDashboardState extends State<NurseDashboard> {
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () {
-              showSearch(context: context, delegate: PatientSearchDelegate());
+              // Bug #11: nurses previously landed on the doctor-only
+              // PatientDetailView, where their messages were stored with
+              // senderRole 'doctor' and an empty receiverId. Instead, jump
+              // this dashboard to the found patient's ward/bed.
+              showSearch(
+                context: context,
+                delegate: PatientSearchDelegate(
+                  onPatientSelected: (patient) {
+                    _updateSelection(patient.wardNumber, patient.bedNumber);
+                    Navigator.of(context).popUntil((route) => route.isFirst);
+                  },
+                ),
+              );
             },
             tooltip: 'Search Patient',
           ),
@@ -395,7 +417,7 @@ class _NurseDashboardState extends State<NurseDashboard> {
 
           // Tab content
           Expanded(
-            child: IndexedStack(index: _currentIndex, children: _tabs),
+            child: IndexedStack(index: _currentIndex, children: _buildTabs()),
           ),
         ],
       ),

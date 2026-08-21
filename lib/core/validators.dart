@@ -64,40 +64,37 @@ class Validators {
     return null;
   }
 
-  /// Validates vital signs
+  /// Validates vital signs.
+  ///
+  /// Ranges are wide enough to accept REAL pathology (hypothermia below
+  /// 35°C, shock BP below 70 systolic, etc.) while still catching typos like
+  /// an extra digit or a swapped field.
   static String? heartRate(String? value) {
-    return numericRange(value, 30, 250, 'Heart rate');
+    return numericRange(value, 20, 300, 'Heart rate');
   }
 
   static String? bloodPressureSystolic(String? value) {
-    return numericRange(value, 70, 250, 'Systolic BP');
+    return numericRange(value, 40, 300, 'Systolic BP');
   }
 
   static String? bloodPressureDiastolic(String? value) {
-    return numericRange(value, 40, 150, 'Diastolic BP');
+    return numericRange(value, 20, 200, 'Diastolic BP');
   }
 
   static String? oxygenSaturation(String? value) {
-    return numericRange(value, 0, 100, 'Oxygen saturation');
+    return numericRange(value, 40, 100, 'Oxygen saturation');
   }
 
   static String? temperature(String? value) {
-    return numericRange(value, 35, 43, 'Temperature');
+    return numericRange(value, 30, 43, 'Temperature');
   }
 
   static String? respiratoryRate(String? value) {
-    return numericRange(value, 5, 60, 'Respiratory rate');
+    return numericRange(value, 4, 80, 'Respiratory rate');
   }
 
   static String? glucoseLevel(String? value) {
-    final error = numeric(value, 'Glucose level');
-    if (error != null) return error;
-    
-    final number = double.parse(value!);
-    if (number < 0 || number > 1000) {
-      return 'Glucose level seems invalid';
-    }
-    return null;
+    return numericRange(value, 10, 1500, 'Glucose level');
   }
 
   /// Validates age

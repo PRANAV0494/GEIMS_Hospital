@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/app_theme.dart';
-import '../config/constants.dart';
 import '../config/routes.dart';
+import '../core/validators.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/common/logo_widget.dart';
 
+/// Staff sign-in.
+///
+/// There is deliberately NO self-registration here (bug #1): anyone could
+/// previously create their own Doctor account from this screen. Staff
+/// accounts are provisioned exclusively by an administrator from the admin
+/// dashboard, and firestore.rules reject /users creates from anyone else.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -17,24 +23,12 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  String _selectedRole = AppConstants.roleNurse;
   bool _obscurePassword = true;
-  bool _isSignUp = false;
-  
-  // Sign up specific fields
-  final _nameController = TextEditingController();
-  final _employeeIdController = TextEditingController();
-  final _wardController = TextEditingController();
-  final _specializationController = TextEditingController();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _nameController.dispose();
-    _employeeIdController.dispose();
-    _wardController.dispose();
-    _specializationController.dispose();
     super.dispose();
   }
 
@@ -43,27 +37,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    bool success;
-    if (_isSignUp) {
-      success = await authProvider.signUp(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        name: _nameController.text.trim(),
-        employeeId: _employeeIdController.text.trim(),
-        role: _selectedRole,
-        assignedWard: _selectedRole == AppConstants.roleNurse 
-            ? _wardController.text.trim() 
-            : null,
-        specialization: _selectedRole == AppConstants.roleDoctor 
-            ? _specializationController.text.trim() 
-            : null,
-      );
-    } else {
-      success = await authProvider.signIn(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-      );
-    }
+    final success = await authProvider.signIn(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
 
     if (!mounted) return;
 
@@ -75,6 +52,18 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.of(context).pushReplacementNamed(AppRoutes.nurseDashboard);
       } else if (authProvider.isDoctor) {
         Navigator.of(context).pushReplacementNamed(AppRoutes.doctorDashboard);
+      } else {
+        // Unknown/unrecognized role - fail loudly instead of stranding the
+        // user on a login screen that says nothing (bug #31).
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your account role is not recognized. Contact an administrator.',
+            ),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+        await authProvider.signOut();
       }
     } else {
       // Show error
@@ -114,83 +103,27 @@ class _LoginScreenState extends State<LoginScreen> {
               key: _formKey,
               child: Column(
                 children: [
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 60),
 
                   // Logo
-                  const LogoWidget(
-                    width: 240,
-                    height: 90,
-                  ),
+                  const LogoWidget(width: 240, height: 90),
 
                   const SizedBox(height: 24),
 
                   // Welcome text
                   Text(
-                    _isSignUp ? 'Create Account' : 'Welcome Back',
+                    'Welcome Back',
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
 
                   const SizedBox(height: 8),
 
                   Text(
-                    _isSignUp 
-                        ? 'Sign up to get started' 
-                        : 'Sign in to continue',
+                    'Sign in with your staff account',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
 
                   const SizedBox(height: 32),
-
-                  // Role Selector
-                  _buildRoleSelector(),
-
-                  const SizedBox(height: 24),
-
-                  // Sign up specific fields
-                  if (_isSignUp) ...[
-                    _buildTextField(
-                      controller: _nameController,
-                      label: 'Full Name',
-                      icon: Icons.person_outline,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your name';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    _buildTextField(
-                      controller: _employeeIdController,
-                      label: 'Employee ID',
-                      icon: Icons.badge_outlined,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your employee ID';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    if (_selectedRole == AppConstants.roleNurse)
-                      _buildTextField(
-                        controller: _wardController,
-                        label: 'Assigned Ward',
-                        icon: Icons.meeting_room_outlined,
-                        keyboardType: TextInputType.number,
-                      ),
-
-                    if (_selectedRole == AppConstants.roleDoctor)
-                      _buildTextField(
-                        controller: _specializationController,
-                        label: 'Specialization',
-                        icon: Icons.medical_services_outlined,
-                      ),
-
-                    const SizedBox(height: 16),
-                  ],
 
                   // Email field
                   _buildTextField(
@@ -198,16 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     label: 'Email',
                     icon: Icons.email_outlined,
                     keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                          .hasMatch(value)) {
-                        return 'Please enter a valid email';
-                      }
-                      return null;
-                    },
+                    validator: Validators.email,
                   ),
 
                   const SizedBox(height: 16),
@@ -235,9 +159,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       if (value == null || value.isEmpty) {
                         return 'Please enter your password';
                       }
-                      if (_isSignUp && value.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
                       return null;
                     },
                   ),
@@ -251,7 +172,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: authProvider.isLoading ? null : _handleSubmit,
+                          onPressed: authProvider.isLoading
+                              ? null
+                              : _handleSubmit,
                           child: authProvider.isLoading
                               ? const SizedBox(
                                   width: 24,
@@ -261,9 +184,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : Text(
-                                  _isSignUp ? 'Create Account' : 'Sign In',
-                                  style: const TextStyle(
+                              : const Text(
+                                  'Sign In',
+                                  style: TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -275,31 +198,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Toggle sign up / sign in
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        _isSignUp
-                            ? 'Already have an account?'
-                            : 'Don\'t have an account?',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          setState(() {
-                            _isSignUp = !_isSignUp;
-                          });
-                        },
-                        child: Text(
-                          _isSignUp ? 'Sign In' : 'Sign Up',
-                          style: TextStyle(
-                            color: AppTheme.primaryColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
+                  Text(
+                    'No account? Staff accounts are created by the hospital '
+                    'administrator.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
 
                   const SizedBox(height: 40),
@@ -307,78 +212,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRoleSelector() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [AppTheme.cardShadow],
-      ),
-      padding: const EdgeInsets.all(8),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildRoleButton(
-              role: AppConstants.roleNurse,
-              label: 'Nurse',
-              icon: Icons.medical_services_outlined,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildRoleButton(
-              role: AppConstants.roleDoctor,
-              label: 'Doctor',
-              icon: Icons.local_hospital_outlined,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoleButton({
-    required String role,
-    required String label,
-    required IconData icon,
-  }) {
-    final isSelected = _selectedRole == role;
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _selectedRole = role;
-        });
-      },
-      child: AnimatedContainer(
-        duration: AppConstants.shortAnimation,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 32,
-              color: isSelected ? Colors.white : AppTheme.textSecondary,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : AppTheme.textSecondary,
-              ),
-            ),
-          ],
         ),
       ),
     );

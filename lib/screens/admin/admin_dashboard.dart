@@ -1,6 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
+import '../../core/validators.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
@@ -83,150 +85,14 @@ class _AdminDashboardState extends State<AdminDashboard>
             role: 'doctor',
             authService: _authService,
             databaseService: _databaseService,
-            onAddStaff: () => _showAddStaffDialog(context, 'doctor'),
           ),
           _StaffListTab(
             title: 'Nurses',
             role: 'nurse',
             authService: _authService,
             databaseService: _databaseService,
-            onAddStaff: () => _showAddStaffDialog(context, 'nurse'),
           ),
           _InfrastructureTab(databaseService: _databaseService),
-        ],
-      ),
-    );
-  }
-
-  void _showAddStaffDialog(BuildContext context, String role) {
-    final nameController = TextEditingController();
-    final emailController = TextEditingController();
-    final passwordController = TextEditingController();
-    final employeeIdController = TextEditingController();
-    final wardController = TextEditingController();
-    final specializationController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add New ${role == 'doctor' ? 'Doctor' : 'Nurse'}'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  prefixIcon: Icon(Icons.person),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  prefixIcon: Icon(Icons.email),
-                ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  prefixIcon: Icon(Icons.lock),
-                ),
-                obscureText: true,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: employeeIdController,
-                decoration: const InputDecoration(
-                  labelText: 'Employee ID',
-                  prefixIcon: Icon(Icons.badge),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: wardController,
-                decoration: const InputDecoration(
-                  labelText: 'Assigned Ward',
-                  prefixIcon: Icon(Icons.location_on),
-                ),
-              ),
-              if (role == 'doctor') ...[
-                const SizedBox(height: 12),
-                TextField(
-                  controller: specializationController,
-                  decoration: const InputDecoration(
-                    labelText: 'Specialization',
-                    prefixIcon: Icon(Icons.medical_information),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.isEmpty ||
-                  emailController.text.isEmpty ||
-                  passwordController.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please fill all required fields'),
-                  ),
-                );
-                return;
-              }
-
-              try {
-                await _authService.signUp(
-                  email: emailController.text.trim(),
-                  password: passwordController.text,
-                  name: nameController.text.trim(),
-                  employeeId: employeeIdController.text.trim(),
-                  role: role,
-                  assignedWard: wardController.text.trim().isNotEmpty
-                      ? wardController.text.trim()
-                      : null,
-                  specialization:
-                      specializationController.text.trim().isNotEmpty
-                      ? specializationController.text.trim()
-                      : null,
-                );
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        '${role == 'doctor' ? 'Doctor' : 'Nurse'} added successfully',
-                      ),
-                      backgroundColor: AppTheme.stableGreen,
-                    ),
-                  );
-                  setState(() {}); // Refresh the list
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error: ${e.toString()}'),
-                      backgroundColor: AppTheme.criticalRed,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Add'),
-          ),
         ],
       ),
     );
@@ -248,28 +114,16 @@ class _OverviewTab extends StatefulWidget {
 }
 
 class _OverviewTabState extends State<_OverviewTab> {
-  // Cache staff counts to avoid repeated network calls
-  int _doctorCount = 0;
-  int _nurseCount = 0;
-  bool _staffLoaded = false;
+  late Stream<List<UserModel>> _doctorsStream;
+  late Stream<List<UserModel>> _nursesStream;
 
   @override
   void initState() {
     super.initState();
-    _loadStaffCounts();
-  }
-
-  Future<void> _loadStaffCounts() async {
-    if (_staffLoaded) return;
-    final doctors = await widget.authService.getAllDoctors();
-    final nurses = await widget.authService.getAllNurses();
-    if (mounted) {
-      setState(() {
-        _doctorCount = doctors.length;
-        _nurseCount = nurses.length;
-        _staffLoaded = true;
-      });
-    }
+    // Bug #36: staff counts were fetched once and never refreshed after
+    // adding/removing staff. Live streams keep them current.
+    _doctorsStream = widget.databaseService.streamActiveStaff('doctor');
+    _nursesStream = widget.databaseService.streamActiveStaff('nurse');
   }
 
   @override
@@ -343,8 +197,8 @@ class _OverviewTabState extends State<_OverviewTab> {
               ),
               const SizedBox(height: 24),
 
-              // Stats Grid - uses cached staff counts and streamed patient data
-              _buildStatsGrid(patients, criticalPatients.length),
+              // Stats Grid - uses live staff counts and streamed patient data
+              _buildStatsGrid(context, patients, criticalPatients.length),
 
               const SizedBox(height: 24),
 
@@ -357,7 +211,11 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
-  Widget _buildStatsGrid(List<dynamic> patients, int criticalCount) {
+  Widget _buildStatsGrid(
+    BuildContext context,
+    List<dynamic> patients,
+    int criticalCount,
+  ) {
     return Column(
       children: [
         Row(
@@ -385,20 +243,32 @@ class _OverviewTabState extends State<_OverviewTab> {
         Row(
           children: [
             Expanded(
-              child: _StatCard(
-                title: 'Doctors',
-                value: '$_doctorCount',
-                icon: Icons.medical_services,
-                color: Colors.blue,
+              child: StreamBuilder<List<UserModel>>(
+                stream: _doctorsStream,
+                builder: (context, snapshot) {
+                  final count = snapshot.hasData ? snapshot.data!.length : 0;
+                  return _StatCard(
+                    title: 'Doctors',
+                    value: '$count',
+                    icon: Icons.medical_services,
+                    color: Colors.blue,
+                  );
+                },
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _StatCard(
-                title: 'Nurses',
-                value: '$_nurseCount',
-                icon: Icons.person,
-                color: AppTheme.stableGreen,
+              child: StreamBuilder<List<UserModel>>(
+                stream: _nursesStream,
+                builder: (context, snapshot) {
+                  final count = snapshot.hasData ? snapshot.data!.length : 0;
+                  return _StatCard(
+                    title: 'Nurses',
+                    value: '$count',
+                    icon: Icons.person,
+                    color: AppTheme.stableGreen,
+                  );
+                },
               ),
             ),
           ],
@@ -408,23 +278,14 @@ class _OverviewTabState extends State<_OverviewTab> {
           children: [
             Expanded(
               child: _StatCard(
-                title: 'Staff Loaded',
-                value: _staffLoaded ? '✓' : '...',
-                icon: Icons.sync,
-                color: _staffLoaded
-                    ? AppTheme.stableGreen
-                    : AppTheme.warningOrange,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _StatCard(
                 title: 'Occupied Beds',
                 value: '${patients.length}',
                 icon: Icons.bed,
                 color: Colors.purple,
               ),
             ),
+            const SizedBox(width: 12),
+            const Expanded(child: SizedBox.shrink()),
           ],
         ),
       ],
@@ -620,12 +481,11 @@ class _BedMapTabState extends State<_BedMapTab> {
 
   Future<void> _loadConfig() async {
     final config = await widget.databaseService.getHospitalConfig();
-    if (config != null) {
-      setState(() {
-        _totalWards = config['totalWards'] ?? 5;
-        _bedsPerWard = config['bedsPerWard'] ?? 10;
-      });
-    }
+    if (!mounted || config == null) return;
+    setState(() {
+      _totalWards = config['totalWards'] ?? 5;
+      _bedsPerWard = config['bedsPerWard'] ?? 10;
+    });
   }
 
   @override
@@ -907,93 +767,355 @@ class _BedMapTabState extends State<_BedMapTab> {
   }
 }
 
-class _StaffListTab extends StatelessWidget {
+class _StaffListTab extends StatefulWidget {
   final String title;
   final String role;
   final AuthService authService;
   final DatabaseService databaseService;
-  final VoidCallback onAddStaff;
 
   const _StaffListTab({
     required this.title,
     required this.role,
     required this.authService,
     required this.databaseService,
-    required this.onAddStaff,
   });
+
+  @override
+  State<_StaffListTab> createState() => _StaffListTabState();
+}
+
+class _StaffListTabState extends State<_StaffListTab> {
+  List<UserModel> _staff = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  // Bug #28/#36: the list used to be a FutureBuilder whose future was
+  // re-created inline in build(), so it reset to a full-screen spinner on
+  // every tab swipe and never refreshed after adding staff.
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final staff = widget.role == 'doctor'
+          ? await widget.authService.getAllDoctors()
+          : await widget.authService.getAllNurses();
+      if (!mounted) return;
+      setState(() {
+        _staff = staff;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      body: FutureBuilder<List<UserModel>>(
-        future: role == 'doctor'
-            ? authService.getAllDoctors()
-            : authService.getAllNurses(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    role == 'doctor'
-                        ? Icons.medical_services_outlined
-                        : Icons.person_outline,
-                    size: 80,
-                    color: Colors.grey.shade300,
-                  ),
+                  Icon(Icons.cloud_off, size: 60, color: AppTheme.criticalRed),
                   const SizedBox(height: 16),
                   Text(
-                    'No ${role}s found',
-                    style: TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 16,
-                    ),
+                    'Could not load staff',
+                    style: TextStyle(color: AppTheme.textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
                   ),
                 ],
               ),
-            );
-          }
-
-          final staff = snapshot.data!;
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: staff.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final user = staff[index];
-              return _StaffCard(
-                user: user,
-                onDelete: () => _confirmDelete(context, user),
-              );
-            },
-          );
-        },
-      ),
+            )
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: _staff.isEmpty
+                  ? ListView(
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.7,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  widget.role == 'doctor'
+                                      ? Icons.medical_services_outlined
+                                      : Icons.person_outline,
+                                  size: 80,
+                                  color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No active ${widget.role}s found',
+                                  style: TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _staff.length,
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final user = _staff[index];
+                        return _StaffCard(
+                          user: user,
+                          onDelete: () => _confirmDeactivate(user),
+                        );
+                      },
+                    ),
+            ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: onAddStaff,
+        onPressed: _showAddStaffDialog,
         backgroundColor: AppTheme.primaryColor,
         icon: const Icon(Icons.add),
-        label: Text('Add ${role == 'doctor' ? 'Doctor' : 'Nurse'}'),
+        label: Text('Add ${widget.role == 'doctor' ? 'Doctor' : 'Nurse'}'),
       ),
     );
   }
 
-  void _confirmDelete(BuildContext context, UserModel user) {
-    showDialog(
+  /// Bug #5: staff creation previously called signUp() on the PRIMARY auth
+  /// instance, which signed the admin out and hijacked the session. The
+  /// service now provisions via a secondary app instance and the admin's
+  /// session is untouched.
+  void _showAddStaffDialog() {
+    final nameController = TextEditingController();
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final employeeIdController = TextEditingController();
+    final wardController = TextEditingController();
+    final specializationController = TextEditingController();
+
+    final dialogFuture = showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Delete'),
-        content: Text('Are you sure you want to remove ${user.name}?'),
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Add New ${widget.role == 'doctor' ? 'Doctor' : 'Nurse'}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name *',
+                  prefixIcon: Icon(Icons.person),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(
+                  labelText: 'Email *',
+                  prefixIcon: Icon(Icons.email),
+                ),
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: passwordController,
+                decoration: const InputDecoration(
+                  labelText: 'Password * (min 6 characters)',
+                  prefixIcon: Icon(Icons.lock),
+                ),
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: employeeIdController,
+                decoration: const InputDecoration(
+                  labelText: 'Employee ID *',
+                  prefixIcon: Icon(Icons.badge),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: wardController,
+                decoration: const InputDecoration(
+                  labelText: 'Assigned Ward',
+                  prefixIcon: Icon(Icons.location_on),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              if (widget.role == 'doctor') ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: specializationController,
+                  decoration: const InputDecoration(
+                    labelText: 'Specialization',
+                    prefixIcon: Icon(Icons.medical_information),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              // Capture lookups before any await (context across async gaps).
+              final rootMessenger = ScaffoldMessenger.of(context);
+              final dialogMessenger = ScaffoldMessenger.of(dialogContext);
+
+              // Bug #31 companion: add-staff had NO validation - invalid
+              // emails created accounts that could never log in.
+              final email = emailController.text.trim();
+              final name = nameController.text.trim();
+
+              if (name.isEmpty ||
+                  employeeIdController.text.trim().isEmpty ||
+                  passwordController.text.length < 6 ||
+                  Validators.email(email) != null) {
+                dialogMessenger.showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Name, employee ID and a valid email are required; '
+                      'password needs at least 6 characters.',
+                    ),
+                    backgroundColor: AppTheme.warningOrange,
+                  ),
+                );
+                return;
+              }
+
+              try {
+                await widget.authService.createStaffAccount(
+                  email: email,
+                  password: passwordController.text,
+                  name: name,
+                  employeeId: employeeIdController.text.trim(),
+                  role: widget.role,
+                  assignedWard: wardController.text.trim().isNotEmpty
+                      ? wardController.text.trim()
+                      : null,
+                  specialization:
+                      specializationController.text.trim().isNotEmpty
+                      ? specializationController.text.trim()
+                      : null,
+                );
+
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext, true);
+                  rootMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${widget.role == 'doctor' ? 'Doctor' : 'Nurse'} '
+                        'added successfully',
+                      ),
+                      backgroundColor: AppTheme.stableGreen,
+                    ),
+                  );
+                }
+              } on FirebaseAuthException catch (e) {
+                if (e.code == 'email-already-in-use') {
+                  // Bug #15: deactivated staff keep their reserved Auth
+                  // account, so re-adding their email used to fail forever.
+                  // Offer reactivation instead.
+                  final reactivated = await widget.authService
+                      .reactivateStaffByEmail(email);
+                  if (!dialogContext.mounted) return;
+                  if (reactivated != null) {
+                    Navigator.pop(dialogContext, true);
+                    rootMessenger.showSnackBar(
+                      SnackBar(
+                        content: Text('${reactivated.name} reactivated'),
+                        backgroundColor: AppTheme.stableGreen,
+                      ),
+                    );
+                  } else {
+                    dialogMessenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'This email already has an active account.',
+                        ),
+                        backgroundColor: AppTheme.criticalRed,
+                      ),
+                    );
+                  }
+                } else {
+                  dialogMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Error: ${e.message ?? e.code}'),
+                      backgroundColor: AppTheme.criticalRed,
+                    ),
+                  );
+                }
+              } catch (e) {
+                dialogMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: AppTheme.criticalRed,
+                  ),
+                );
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+
+    // Bug #36: six TextEditingControllers leaked on every dialog open.
+    dialogFuture
+        .whenComplete(() {
+          nameController.dispose();
+          emailController.dispose();
+          passwordController.dispose();
+          employeeIdController.dispose();
+          wardController.dispose();
+          specializationController.dispose();
+        })
+        .then((created) {
+          if (created == true) {
+            _load();
+          }
+        });
+  }
+
+  void _confirmDeactivate(UserModel user) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove Staff Member'),
+        content: Text(
+          'Deactivate ${user.name}? They will immediately lose access to the '
+          'app. Their login can be restored later by adding them again with '
+          'the same email.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
@@ -1001,29 +1123,33 @@ class _StaffListTab extends StatelessWidget {
               backgroundColor: AppTheme.criticalRed,
             ),
             onPressed: () async {
-              try {
-                await databaseService.deleteUser(user.id);
-                if (context.mounted) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${user.name} removed'),
-                      backgroundColor: AppTheme.stableGreen,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Failed to delete: ${e.toString()}'),
-                      backgroundColor: AppTheme.criticalRed,
-                    ),
-                  );
-                }
+              final rootMessenger = ScaffoldMessenger.of(context);
+              // Bug #15: only the Firestore doc was deleted (which rules
+              // denied anyway), while the Auth account lived on with full
+              // sign-in ability. Deactivation flips isActive, which both the
+              // rosters and the sign-in flow honor.
+              final success = await widget.databaseService.deactivateUser(
+                user.id,
+              );
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+              rootMessenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? '${user.name} deactivated'
+                        : 'Failed to deactivate ${user.name}',
+                  ),
+                  backgroundColor: success
+                      ? AppTheme.stableGreen
+                      : AppTheme.criticalRed,
+                ),
+              );
+              if (success) {
+                _load();
               }
             },
-            child: const Text('Delete'),
+            child: const Text('Deactivate'),
           ),
         ],
       ),
@@ -1117,15 +1243,12 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
 
   Future<void> _loadConfig() async {
     final config = await widget.databaseService.getHospitalConfig();
-    if (config != null) {
-      setState(() {
-        _totalWards = config['totalWards'] ?? 5;
-        _bedsPerWard = config['bedsPerWard'] ?? 10;
-        _isLoading = false;
-      });
-    } else {
-      setState(() => _isLoading = false);
-    }
+    if (!mounted) return;
+    setState(() {
+      _totalWards = config?['totalWards'] ?? 5;
+      _bedsPerWard = config?['bedsPerWard'] ?? 10;
+      _isLoading = false;
+    });
   }
 
   Future<void> _saveConfig() async {
@@ -1134,18 +1257,15 @@ class _InfrastructureTabState extends State<_InfrastructureTab> {
       totalWards: _totalWards,
       bedsPerWard: _bedsPerWard,
     );
+    if (!mounted) return;
     setState(() => _isSaving = false);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success ? 'Configuration saved!' : 'Failed to save'),
-          backgroundColor: success
-              ? AppTheme.stableGreen
-              : AppTheme.criticalRed,
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success ? 'Configuration saved!' : 'Failed to save'),
+        backgroundColor: success ? AppTheme.stableGreen : AppTheme.criticalRed,
+      ),
+    );
   }
 
   @override

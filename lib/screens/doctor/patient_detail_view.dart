@@ -34,18 +34,77 @@ class _PatientDetailViewState extends State<PatientDetailView>
   final _scrollController = ScrollController();
   bool _isSending = false;
 
-  // Voice recording state
+  // Voice recording state.
+  // Bug #19: the duration used to be pushed through setState() on the WHOLE
+  // screen every second, rebuilding the tab bar views and re-creating the
+  // Firestore streams they hold - the chat visibly blanked/resubscribed once
+  // per second while recording. A ValueNotifier only rebuilds the tiny
+  // duration label.
   final AudioRecorder _audioRecorder = AudioRecorder();
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isRecording = false;
-  int _recordDuration = 0;
+  final ValueNotifier<int> _recordDuration = ValueNotifier<int>(0);
   Timer? _recordTimer;
   String? _recordingPath;
+
+  // Bug #19/#28: streams are created once per patient instead of inline in
+  // build(), where every rebuild resubscribed Firestore.
+  Stream<List<VitalsModel>>? _vitalsStream;
+  Stream<List<MedicationModel>>? _medsStream;
+  Stream<List<MessageModel>>? _messagesStream;
+
+  // Bug #20 family: mark-as-read runs only while the Messages tab is
+  // actually on screen, never during build.
+  bool get _messagesTabVisible => _tabController.index == 2;
+  final Set<String> _markedMessageIds = {};
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    // Read receipts fire only when the Messages tab becomes visible.
+    _tabController.addListener(() {
+      if (_messagesTabVisible) {
+        _markUnreadAsRead();
+      }
+    });
+    _vitalsStream = _databaseService.getVitalsForPatient(widget.patient.id);
+    _medsStream = _databaseService.getMedicationsForPatient(widget.patient.id);
+    _messagesStream = _databaseService.getMessagesForPatient(widget.patient.id);
+  }
+
+  Stream<List<VitalsModel>> get _safeVitalsStream =>
+      _vitalsStream ??= _databaseService.getVitalsForPatient(widget.patient.id);
+
+  Stream<List<MedicationModel>> get _safeMedsStream => _medsStream ??=
+      _databaseService.getMedicationsForPatient(widget.patient.id);
+
+  Stream<List<MessageModel>> get _safeMessagesStream => _messagesStream ??=
+      _databaseService.getMessagesForPatient(widget.patient.id);
+
+  /// Marks unread messages addressed to me as read - called from the tab
+  /// controller listener (i.e. only when the user actually opens the
+  /// Messages tab), never from build().
+  Future<void> _markUnreadAsRead() async {
+    if (!_messagesTabVisible) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.currentUser?.id;
+    if (currentUserId == null) return;
+
+    try {
+      final messages = await _safeMessagesStream.first;
+      for (final message in messages) {
+        if (message.receiverId == currentUserId &&
+            !message.isRead &&
+            !_markedMessageIds.contains(message.id)) {
+          _markedMessageIds.add(message.id);
+          await _databaseService.markMessageAsRead(message.id);
+        }
+      }
+    } catch (_) {
+      // Read receipts are best-effort; failures surface as unread badges.
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -60,7 +119,9 @@ class _PatientDetailViewState extends State<PatientDetailView>
       id: '',
       senderId: user?.id ?? '',
       senderName: user?.name ?? 'Unknown Doctor',
-      senderRole: AppConstants.roleDoctor,
+      // Honest attribution: use the signed-in user's real role instead of a
+      // hardcoded 'doctor' (bug #11 family).
+      senderRole: user?.role ?? AppConstants.roleDoctor,
       receiverId: widget.patient.assignedNurseId ?? '',
       receiverName: 'Nurse',
       patientId: widget.patient.id,
@@ -102,13 +163,12 @@ class _PatientDetailViewState extends State<PatientDetailView>
           path: _recordingPath!,
         );
 
-        setState(() {
-          _isRecording = true;
-          _recordDuration = 0;
-        });
+        setState(() => _isRecording = true);
+        _recordDuration.value = 0;
 
+        // Only the duration label listens to this - no whole-screen rebuild.
         _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          setState(() => _recordDuration++);
+          _recordDuration.value++;
         });
       } else {
         if (mounted) {
@@ -139,10 +199,8 @@ class _PatientDetailViewState extends State<PatientDetailView>
   void _cancelRecording() {
     _recordTimer?.cancel();
     _audioRecorder.stop();
-    setState(() {
-      _isRecording = false;
-      _recordDuration = 0;
-    });
+    setState(() => _isRecording = false);
+    _recordDuration.value = 0;
   }
 
   Future<void> _sendVoiceMessage(String filePath) async {
@@ -182,7 +240,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
         id: '',
         senderId: user?.id ?? '',
         senderName: user?.name ?? 'Unknown Doctor',
-        senderRole: AppConstants.roleDoctor,
+        senderRole: user?.role ?? AppConstants.roleDoctor,
         receiverId: widget.patient.assignedNurseId ?? '',
         receiverName: 'Nurse',
         patientId: widget.patient.id,
@@ -191,13 +249,13 @@ class _PatientDetailViewState extends State<PatientDetailView>
         type: AppConstants.messageTypeVoice,
         sentAt: DateTime.now(),
         voiceNotePath: downloadUrl,
-        voiceDurationSeconds: _recordDuration,
+        voiceDurationSeconds: _recordDuration.value,
       );
 
       final result = await _databaseService.sendMessage(message);
 
       if (mounted && result != null) {
-        setState(() => _recordDuration = 0);
+        _recordDuration.value = 0;
         Future.delayed(const Duration(milliseconds: 100), () {
           if (_scrollController.hasClients) {
             _scrollController.animateTo(
@@ -391,7 +449,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
 
   Widget _buildVitalsTab() {
     return StreamBuilder<List<VitalsModel>>(
-      stream: _databaseService.getVitalsForPatient(widget.patient.id),
+      stream: _safeVitalsStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return Center(
@@ -628,7 +686,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
 
   Widget _buildMedicationsTab() {
     return StreamBuilder<List<MedicationModel>>(
-      stream: _databaseService.getMedicationsForPatient(widget.patient.id),
+      stream: _safeMedsStream,
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return Center(
@@ -687,7 +745,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
       children: [
         Expanded(
           child: StreamBuilder<List<MessageModel>>(
-            stream: _databaseService.getMessagesForPatient(widget.patient.id),
+            stream: _safeMessagesStream,
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return Center(
@@ -710,13 +768,10 @@ class _PatientDetailViewState extends State<PatientDetailView>
               }
 
               final messages = snapshot.data!;
-
-              // Mark messages as read
-              for (final message in messages) {
-                if (message.receiverId == currentUserId && !message.isRead) {
-                  _databaseService.markMessageAsRead(message.id);
-                }
-              }
+              // Read receipts are handled by the tab-controller listener
+              // (_markUnreadAsRead) - marking inside build() fired on every
+              // rebuild, and the hidden-tab problem made messages "read"
+              // before the doctor ever saw them (bug #20).
 
               return ListView.builder(
                 controller: _scrollController,
@@ -856,13 +911,19 @@ class _PatientDetailViewState extends State<PatientDetailView>
                   ),
                 ),
                 const Spacer(),
-                Text(
-                  '${(_recordDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordDuration % 60).toString().padLeft(2, '0')}',
-                  style: TextStyle(
-                    color: AppTheme.criticalRed,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                // Bug #19: only this label rebuilds per second.
+                ValueListenableBuilder<int>(
+                  valueListenable: _recordDuration,
+                  builder: (context, seconds, _) {
+                    return Text(
+                      '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}',
+                      style: TextStyle(
+                        color: AppTheme.criticalRed,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -891,6 +952,7 @@ class _PatientDetailViewState extends State<PatientDetailView>
     _messageController.dispose();
     _scrollController.dispose();
     _recordTimer?.cancel();
+    _recordDuration.dispose();
     _audioRecorder.dispose();
     _audioPlayer.dispose();
     super.dispose();

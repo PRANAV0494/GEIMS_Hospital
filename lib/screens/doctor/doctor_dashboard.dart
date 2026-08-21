@@ -35,6 +35,8 @@ class _DoctorDashboardState extends State<DoctorDashboard> {
 
     final wards = await _databaseService.getDoctorWards(doctorId);
 
+    // Bug #29: setState-after-await without a guard crashed on logout.
+    if (!mounted) return;
     setState(() {
       _wards = wards;
       if (_wards.isNotEmpty) {

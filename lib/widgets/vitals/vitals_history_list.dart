@@ -102,32 +102,39 @@ class VitalsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            // Bug #38: alert keys didn't match VitalsModel.calculateAlerts()
+            // ('heart_rate' vs 'heartRate', etc.), so abnormal rows rendered
+            // as normal. Use the model's own getters instead of raw map keys.
             _buildVitalRow(
               'Heart Rate',
               '${vital.heartRate} bpm',
-              vital.alerts['heart_rate'] == true,
+              vital.isHeartRateAbnormal,
             ),
             _buildVitalRow(
               'Blood Pressure',
               '${vital.systolicBP}/${vital.diastolicBP} mmHg',
-              vital.alerts['blood_pressure'] == true,
+              vital.isBPAbnormal,
             ),
             _buildVitalRow(
               'Oxygen',
               '${vital.oxygenSaturation}%',
-              vital.alerts['oxygen'] == true,
+              vital.isOxygenLow,
             ),
             _buildVitalRow(
               'Temperature',
               '${vital.temperature}°C',
-              vital.alerts['temperature'] == true,
+              vital.isTemperatureAbnormal,
             ),
             _buildVitalRow(
               'Respiratory Rate',
               '${vital.respiratoryRate} breaths/min',
-              false,
+              vital.isRespiratoryAbnormal,
             ),
-            _buildVitalRow('Glucose', '${vital.glucoseLevel} mg/dL', false),
+            _buildVitalRow(
+              'Glucose',
+              '${vital.glucoseLevel} mg/dL',
+              vital.isGlucoseAbnormal,
+            ),
             if (vital.notes != null && vital.notes!.isNotEmpty) ...[
               const SizedBox(height: 8),
               const Divider(),

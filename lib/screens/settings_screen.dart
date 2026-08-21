@@ -14,7 +14,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   final _databaseService = DatabaseService();
-  
+
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _wardController;
@@ -29,7 +29,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _nameController = TextEditingController(text: user?.name);
     _emailController = TextEditingController(text: user?.email);
     _wardController = TextEditingController(text: user?.assignedWard);
-    _specializationController = TextEditingController(text: user?.specialization);
+    _specializationController = TextEditingController(
+      text: user?.specialization,
+    );
   }
 
   @override
@@ -52,10 +54,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (user == null) return;
 
-      final updates = <String, dynamic>{
-        'name': _nameController.text.trim(),
-        'assignedWard': _wardController.text.trim(),
-      };
+      // Bug #31: settings used to force a ward number on EVERY role - a
+      // doctor couldn't save their name without inventing one. Ward is only
+      // collected for nurses (it drives their task list).
+      final updates = <String, dynamic>{'name': _nameController.text.trim()};
+
+      if (user.isNurse) {
+        updates['assignedWard'] = _wardController.text.trim();
+      }
 
       if (user.isDoctor) {
         updates['specialization'] = _specializationController.text.trim();
@@ -65,24 +71,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (success) {
         // Refresh user data locally
-        await authProvider.refreshUser(); // Assuming this exists or we need to handle it
+        await authProvider
+            .refreshUser(); // Assuming this exists or we need to handle it
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Profile updated successfully'), backgroundColor: AppTheme.stableGreen),
+            const SnackBar(
+              content: Text('Profile updated successfully'),
+              backgroundColor: AppTheme.stableGreen,
+            ),
           );
           Navigator.pop(context);
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to update profile'), backgroundColor: AppTheme.criticalRed),
+            const SnackBar(
+              content: Text('Failed to update profile'),
+              backgroundColor: AppTheme.criticalRed,
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.criticalRed),
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: AppTheme.criticalRed,
+          ),
         );
       }
     } finally {
@@ -95,9 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final user = Provider.of<AuthProvider>(context).currentUser;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -107,7 +121,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               _buildSectionHeader('Profile Information'),
               const SizedBox(height: 16),
-              
+
               // Read-only Email
               TextFormField(
                 controller: _emailController,
@@ -128,27 +142,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   labelText: 'Full Name',
                   prefixIcon: Icon(Icons.person_outline),
                 ),
-                validator: (value) => value!.isEmpty ? 'Please enter your name' : null,
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter your name' : null,
               ),
               const SizedBox(height: 16),
 
-              // Ward (Shared field for Nurse, but editable)
-              TextFormField(
-                controller: _wardController,
-                decoration: const InputDecoration(
-                  labelText: 'Assigned Ward',
-                  hintText: 'e.g., 1',
-                  prefixIcon: Icon(Icons.local_hospital_outlined),
-                  helperText: 'Your tasks will be linked to this ward',
+              // Ward (nurses only - it scopes their task list)
+              if (user?.isNurse ?? false) ...[
+                TextFormField(
+                  controller: _wardController,
+                  decoration: const InputDecoration(
+                    labelText: 'Assigned Ward',
+                    hintText: 'e.g., 1',
+                    prefixIcon: Icon(Icons.local_hospital_outlined),
+                    helperText: 'Your tasks will be linked to this ward',
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter ward number';
+                    }
+                    if (int.tryParse(value) == null) {
+                      return 'Ward must be a number';
+                    }
+                    return null;
+                  },
                 ),
-                keyboardType: TextInputType.number,
-                 validator: (value) {
-                  if (value == null || value.isEmpty) return 'Please enter ward number';
-                  if (int.tryParse(value) == null) return 'Ward must be a number';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
+              ],
 
               // Doctor Specific
               if (user?.isDoctor ?? false) ...[
@@ -169,9 +190,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 height: 50,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _saveSettings,
-                  child: _isLoading 
+                  child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Save Changes', style: TextStyle(fontSize: 16)),
+                      : const Text(
+                          'Save Changes',
+                          style: TextStyle(fontSize: 16),
+                        ),
                 ),
               ),
             ],

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/patient_model.dart';
 import '../services/database_service.dart';
@@ -7,14 +6,18 @@ import '../screens/doctor/patient_detail_view.dart';
 
 class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
   final DatabaseService _databaseService = DatabaseService();
-  final String doctorId; // Optional: to filter by doctor if needed
 
-  // Debounce timer for search optimization
-  Timer? _debounceTimer;
-  String _lastQuery = '';
-  Stream<List<PatientModel>>? _cachedStream;
+  /// When provided (doctors), search is scoped to that doctor's patients.
+  final String doctorId;
 
-  PatientSearchDelegate({this.doctorId = ''});
+  /// Optional tap handler. Nurses pass one that jumps their dashboard to the
+  /// patient's bed instead of opening the doctor-only detail view (bug #11).
+  final void Function(PatientModel patient)? onPatientSelected;
+
+  // One stream per delegate instance - not per keystroke (bug #24).
+  Stream<List<PatientModel>>? _patientsStream;
+
+  PatientSearchDelegate({this.doctorId = '', this.onPatientSelected});
 
   @override
   List<Widget>? buildActions(BuildContext context) {
@@ -24,8 +27,6 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
           icon: const Icon(Icons.clear),
           onPressed: () {
             query = '';
-            _lastQuery = '';
-            _cachedStream = null;
             showSuggestions(context);
           },
         ),
@@ -36,10 +37,7 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
   Widget? buildLeading(BuildContext context) {
     return IconButton(
       icon: const Icon(Icons.arrow_back),
-      onPressed: () {
-        _debounceTimer?.cancel();
-        close(context, null);
-      },
+      onPressed: () => close(context, null),
     );
   }
 
@@ -70,17 +68,16 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
       );
     }
 
-    // Use cached stream if query hasn't changed enough
-    // This prevents recreating the stream on every keystroke
-    if (_cachedStream == null || _lastQuery != query) {
-      _lastQuery = query;
-      _cachedStream = _databaseService.getAllPatients();
-    }
+    _patientsStream ??= _databaseService.getAllPatients();
 
     return StreamBuilder<List<PatientModel>>(
-      stream: _cachedStream,
+      stream: _patientsStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.hasError) {
+          return const Center(child: Text('Could not load patients'));
+        }
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
 
@@ -88,13 +85,26 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
           return const Center(child: Text('No patients found'));
         }
 
-        final patients = snapshot.data!;
-        final q = query.toLowerCase();
+        var patients = snapshot.data!;
+
+        // Doctors search within their own patients only - the filter existed
+        // as a field but was never applied (bug #24).
+        if (doctorId.isNotEmpty) {
+          patients = patients
+              .where((p) => p.attendingDoctorId == doctorId)
+              .toList();
+        }
+
+        final q = query.toLowerCase().trim();
+        // Match on human-meaningful fields. Raw UUIDs are gone: with v4 ids,
+        // typing "2" used to match ~90% of all patients (bug #24).
         final filteredPatients = patients.where((patient) {
           return patient.name.toLowerCase().contains(q) ||
-              patient.wardNumber.toString().contains(q) ||
-              patient.bedNumber.toString().contains(q) ||
-              patient.id.toLowerCase().contains(q) ||
+              patient.wardNumber.toString() == q ||
+              patient.bedNumber.toString() == q ||
+              'ward ${patient.wardNumber}'.contains(q) ||
+              'bed ${patient.bedNumber}'.contains(q) ||
+              patient.wardBedLabel.toLowerCase().contains(q) ||
               (patient.patientCode?.toLowerCase().contains(q) ?? false);
         }).toList();
 
@@ -181,6 +191,11 @@ class PatientSearchDelegate extends SearchDelegate<PatientModel?> {
                     )
                   : null,
               onTap: () {
+                if (onPatientSelected != null) {
+                  close(context, patient);
+                  onPatientSelected!(patient);
+                  return;
+                }
                 Navigator.push(
                   context,
                   MaterialPageRoute(

@@ -6,8 +6,10 @@ import '../../config/app_theme.dart';
 /// Reusable widget for displaying medications list
 class MedicationsList extends StatelessWidget {
   final List<MedicationModel> medications;
-  final Function(String medicationId, String nurseId, String nurseName)?
-      onAdminister;
+
+  /// Called when a nurse taps "Mark as Administered". The caller owns the
+  /// current-user context and the transactional service call.
+  final void Function(MedicationModel medication)? onAdminister;
   final bool isNurse;
   final VoidCallback? onLoadMore;
   final bool hasMore;
@@ -26,9 +28,7 @@ class MedicationsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (medications.isEmpty) {
-      return const Center(
-        child: Text('No medications scheduled'),
-      );
+      return const Center(child: Text('No medications scheduled'));
     }
 
     return ListView.builder(
@@ -69,8 +69,7 @@ class MedicationsList extends StatelessWidget {
 /// Individual medication card widget
 class MedicationCard extends StatelessWidget {
   final MedicationModel medication;
-  final Function(String medicationId, String nurseId, String nurseName)?
-      onAdminister;
+  final void Function(MedicationModel medication)? onAdminister;
   final bool isNurse;
 
   const MedicationCard({
@@ -83,8 +82,8 @@ class MedicationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isPending = !medication.isAdministered;
-    final bool isOverdue = isPending &&
-        medication.scheduledTime.isBefore(DateTime.now());
+    final bool isOverdue =
+        isPending && medication.scheduledTime.isBefore(DateTime.now());
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -115,8 +114,9 @@ class MedicationCard extends StatelessWidget {
             _buildInfoRow('Frequency', medication.frequency),
             _buildInfoRow(
               'Scheduled',
-              DateFormat('MMM dd, yyyy - HH:mm')
-                  .format(medication.scheduledTime),
+              DateFormat(
+                'MMM dd, yyyy - HH:mm',
+              ).format(medication.scheduledTime),
             ),
             if (medication.isInjection)
               const Padding(
@@ -135,14 +135,16 @@ class MedicationCard extends StatelessWidget {
                   ],
                 ),
               ),
-            if (medication.notes != null &&
-                medication.notes!.isNotEmpty) ...[
+            if (medication.notes != null && medication.notes!.isNotEmpty) ...[
               const SizedBox(height: 8),
               const Divider(),
               const SizedBox(height: 8),
               Text(
                 'Notes: ${medication.notes}',
-                style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
             if (medication.isAdministered) ...[
@@ -165,10 +167,10 @@ class MedicationCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: () {
-                    // TODO: Get nurse info from context
-                    // onAdminister!(medication.id, nurseId, nurseName);
-                  },
+                  // Bug #38: this was a TODO no-op - tapping "Mark as
+                  // Administered" did nothing. The caller now receives the
+                  // medication and performs the transactional administration.
+                  onPressed: () => onAdminister!(medication),
                   icon: const Icon(Icons.check),
                   label: const Text('Mark as Administered'),
                   style: ElevatedButton.styleFrom(
